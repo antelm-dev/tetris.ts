@@ -127,7 +127,7 @@ class Field {
     this.activePiece = piece
     this.activePiece.x = Math.floor(center)
     this.activePiece.shape.map((row) => {
-      row.map((cell) => (cell ? 2 : 0))
+      row.map((cell) => (cell ? this.activePiece!.name : 0))
     })
   }
 
@@ -161,7 +161,7 @@ class Field {
         this.activePiece.rotate()
       }
       if (['down', 'left', 'right'].includes(action)) {
-        this.activePiece.move(action)
+        this.activePiece.move(action as Direction)
       }
     } else {
       if (action === 'down') {

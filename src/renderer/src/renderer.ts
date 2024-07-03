@@ -40,7 +40,7 @@ const App = (el: HTMLElement): P5 => {
     p.keyPressed = (e: KeyboardEvent): void => {
       const move = ['left', 'right', 'down'].includes(CONTROLS[e.key])
       if (move) currentAction = CONTROLS[e.key]
-      else GAME.action(CONTROLS[e.key])
+      else GAME.action(CONTROLS[e.key] as any)
     }
 
     p.keyReleased = (): void => {
@@ -49,16 +49,18 @@ const App = (el: HTMLElement): P5 => {
 
     p.draw = (): void => {
       p.background(0, 0, 0, 0)
-      p.directionalLight(255, 255, 255, 0, 0, -1)
+      p.directionalLight(255, 255, 255, 0, 1, -1)
       p.noStroke()
-      p.stroke(0, 0, 0, 50)
+      p.stroke(255, 255, 255, 50)
       p.translate(
         getAdjustedSlotPosition(GAME.field.slots[0].length),
         getAdjustedSlotPosition(GAME.field.slots.length)
       )
+      //  p.rotateX(p.PI / 12)
+      // p.rotateY(p.PI / 12)
 
       if (currentAction && Math.floor(p.frameCount % 2) === 0) {
-        GAME.action(currentAction)
+        GAME.action(currentAction as any)
       }
 
       if (Math.floor(p.frameCount) % SPEED_RATE === 0) {
@@ -87,7 +89,7 @@ const App = (el: HTMLElement): P5 => {
 
           p.push()
           p.translate(j * SLOT_SIZE, i * SLOT_SIZE)
-
+          if (slot === 0) p.translate(0, 0, -SLOT_SIZE)
           if (slot === 1) p.fill(255)
           else {
             switch (slot) {
@@ -114,6 +116,7 @@ const App = (el: HTMLElement): P5 => {
                 break
               default:
                 p.fill(0, 0, 0, 0)
+                p.stroke(255, 255, 255, 25)
             }
           }
 

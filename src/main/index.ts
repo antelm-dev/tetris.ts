@@ -6,14 +6,15 @@ import icon from '../../resources/icon.png?asset'
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 600,
-    height: 700,
+    height: 900,
     titleBarStyle: 'hidden',
     autoHideMenuBar: false,
     resizable: false,
     maximizable: false,
-    backgroundMaterial: 'acrylic',
-    frame: true,
-    transparent: false,
+    backgroundMaterial: 'mica',
+    // frame: false,
+    // transparent: true,
+    alwaysOnTop: true,
     roundedCorners: true,
     show: false,
     titleBarOverlay: {

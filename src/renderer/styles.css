@@ -1,0 +1,17 @@
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+#root {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+#titlebar {
+  -webkit-app-region: drag;
+  height: 100px;
+  width: 100vw;
+  position: absolute;
+  top: 0;
+}

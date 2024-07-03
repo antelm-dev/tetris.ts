@@ -1,52 +1,85 @@
 /* eslint-disable prettier/prettier */
 type Direction = 'left' | 'right' | 'down'
-export type Action = Direction | 'rotate' | 'push' | 'pause' | 'save'
+export type Action = Direction | 'rotate' | 'push' | 'pause' | 'hold'
 
-type Shape = Record<string, number[][]>
-
-const PIECES_SHAPES = [
-  [
+/**
+ * Les formes des pièces de Tetris
+ */
+const PIECES_SHAPES = {
+  O: [
     [1, 1],
     [1, 1]
   ],
-  [[1, 1, 1, 1]],
-  [
+  I: [[1, 1, 1, 1]],
+  T: [
     [1, 1, 1],
     [0, 1, 0]
   ],
-  [
+  L: [
     [1, 1, 1],
     [1, 0, 0]
   ],
-  [
+  Z: [
     [1, 1, 0],
     [0, 1, 1]
   ],
-  [
+  S: [
     [0, 1, 1],
     [1, 1, 0]
   ],
-  [
+  J: [
     [1, 0, 0],
     [1, 1, 1]
   ]
-]
+} as const
 
+/**
+ * Classe représentant une pièce de Tetris
+ */
 class Piece {
+  /**
+   * Nom de la pièce
+   */
+  public name: string
+  /**
+   * Forme de la pièce
+   */
   public shape: number[][]
+  /**
+   * Position de la pièce
+   */
   public x: number
+  /**
+   * Position de la pièce
+   */
   public y: number
 
-  constructor(shape: number[][]) {
+  /**
+   * Crée une pièce de Tetris
+   * @param name Nom de la pièce
+   * @param shape Forme de la pièce
+   */
+  public constructor(name: keyof typeof PIECES_SHAPES, shape: number[][]) {
     this.shape = shape
+    this.name = name
     this.x = 0
     this.y = 0
   }
 
-  public rotate(): void {
-    this.shape = this.shape[0].map((_, i) => this.shape.map((row) => row[i])).reverse()
+  /**
+   * Effectue une rotation de la pièce
+   * @param dir La direction de la rotation
+   */
+  public rotate(dir: Omit<Direction, 'down'> = 'right'): void {
+    this.shape = this.shape[0]
+      .map((_, i) => this.shape.map((row) => (dir === 'right' ? row[i] : row[row.length - i - 1])))
+      .reverse()
   }
 
+  /**
+   * Déplace la pièce
+   * @param dir La direction du mouvement
+   */
   public move(dir: Direction): void {
     switch (dir) {
       case 'left':
@@ -58,20 +91,37 @@ class Piece {
       case 'down':
         this.y++
         break
+      default:
+        throw new Error('Invalid direction')
     }
   }
 }
 
+/**
+ * Classe représentant le terrain de jeu de Tetris
+ */
 class Field {
-  public slots: number[][]
+  /**
+   * Les cases du terrain de jeu
+   */
+  public slots: (number | string)[][]
+  /**
+   * La pièce active
+   */
   public activePiece?: Piece
 
+  /**
+   * @param options Les options du terrain de jeu
+   */
   constructor(options: { width: number; height: number }) {
     this.slots = Array.from({ length: options.height }, () => {
       return Array.from({ length: options.width }, () => 0)
     })
   }
 
+  /**
+   * @param piece La pièce à ajouter
+   */
   public addPiece(piece: Piece): void {
     const center = this.slots[0].length / 2 - piece.shape[0].length / 2
     this.activePiece = piece
@@ -81,28 +131,49 @@ class Field {
     })
   }
 
+  /**
+   * @param index L'index de la ligne à vider
+   */
   public clearRow(index: number): void {
     this.slots.splice(index, 1)
     this.slots.unshift(Array.from({ length: this.slots[0].length }, () => 0))
   }
 
+  /**
+   * Pousse la pièce active vers le bas
+   */
   public push(): void {
     if (!this.activePiece) return
     while (!this.checkCollision('down')) this.activePiece.move('down')
     this.placePiece()
   }
 
+  /**
+   * @param action L'action à effectuer
+   */
   public update(action: Direction | 'rotate'): void {
     if (!this.activePiece) return
 
     const colide = this.checkCollision(action)
-    if (action === 'rotate') {
-      if (!colide) this.activePiece.rotate()
-    } else if (colide) {
-      if (action === 'down') this.placePiece()
-    } else this.activePiece.move(action)
+
+    if (!colide) {
+      if (action === 'rotate') {
+        this.activePiece.rotate()
+      }
+      if (['down', 'left', 'right'].includes(action)) {
+        this.activePiece.move(action)
+      }
+    } else {
+      if (action === 'down') {
+        this.placePiece()
+      }
+    }
   }
 
+  /**
+   * Vérifie si une action provoque une collision
+   * @param action L'action à vérifier
+   */
   private checkCollision(action: Direction | 'rotate'): boolean {
     if (!this.activePiece) return false
 
@@ -130,12 +201,15 @@ class Field {
     )
   }
 
+  /**
+   * Place la pièce active sur le terrain de jeu
+   */
   private placePiece(): void {
     this.activePiece!.shape.forEach((row, i) => {
       const k = this.activePiece!.y + i
       row.forEach((cell, j) => {
         if (cell) {
-          this.slots[k][this.activePiece!.x + j] = 1
+          this.slots[k][this.activePiece!.x + j] = this.activePiece!.name
         }
       })
       if (this.slots[k]?.every((v) => v)) this.clearRow(k)
@@ -149,28 +223,50 @@ class Field {
   }
 }
 
+/**
+ * Classe représentant une partie de Tetris
+ */
 export class Game {
+  /**
+   * La pièce sauvegardée
+   */
   public saved?: Piece
+  /**
+   * Le terrain de jeu
+   */
   public field: Field
+  /**
+   * Indique si le jeu est en pause
+   */
   private paused: boolean = false
 
+  /**
+   * @param options Les options de la partie
+   */
   constructor(options: { width: number; height: number }) {
     this.field = new Field(options)
   }
 
+  /**
+   * Met à jour la partie
+   */
   public update(): void {
     if (this.paused) return
     this.field.update('down')
 
     if (!this.field.activePiece) {
-      const random = Math.floor(Math.random() * PIECES_SHAPES.length)
-      const shape = PIECES_SHAPES[random]
-      this.field.addPiece(new Piece(shape))
+      const keys = Object.keys(PIECES_SHAPES)
+      const random = Math.floor(Math.random() * keys.length)
+      const key = keys[random]
+      this.field.addPiece(new Piece(key as keyof typeof PIECES_SHAPES, PIECES_SHAPES[key]))
     }
 
-    if (this.field.slots[0].some((v) => v === 1)) this.gameOver()
+    if (this.field.slots[0].some((v) => v)) this.gameOver()
   }
 
+  /**
+   * @param name L'action à effectuer
+   */
   public action(name: Direction | 'rotate' | 'push' | 'pause'): void {
     if (name === 'push') {
       this.field.push()
@@ -181,10 +277,16 @@ export class Game {
     }
   }
 
+  /**
+   * Réinitialise la partie
+   */
   private gameOver(): void {
     this.field.reset()
   }
 
+  /**
+   * Met en pause ou reprend la partie
+   */
   private pause(): void {
     this.paused = !this.paused
   }

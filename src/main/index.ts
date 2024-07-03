@@ -6,7 +6,7 @@ import icon from '../../resources/icon.png?asset'
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 600,
-    height: 670,
+    height: 700,
     titleBarStyle: 'hidden',
     autoHideMenuBar: false,
     resizable: false,
@@ -17,11 +17,11 @@ function createWindow(): void {
     roundedCorners: true,
     show: false,
     titleBarOverlay: {
-      height: 29,
+      height: 30,
       color: '#00000000',
       symbolColor: 'white'
     },
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false

@@ -8,7 +8,8 @@ const CONTROLS: Record<string, Tetris.Action> = {
   ArrowDown: 'down',
   ArrowUp: 'rotate',
   ' ': 'push',
-  p: 'pause'
+  p: 'pause',
+  Shift: 'hold'
 }
 
 const SLOT_SIZE = 30
@@ -49,8 +50,8 @@ const App = (el: HTMLElement): P5 => {
     p.draw = (): void => {
       p.background(0, 0, 0, 0)
       p.directionalLight(255, 255, 255, 0, 0, -1)
-      p.stroke(255, 255, 255, 50)
-
+      p.noStroke()
+      p.stroke(0, 0, 0, 50)
       p.translate(
         getAdjustedSlotPosition(GAME.field.slots[0].length),
         getAdjustedSlotPosition(GAME.field.slots.length)
@@ -80,7 +81,7 @@ const App = (el: HTMLElement): P5 => {
               localJ < activePiece.shape[localI].length &&
               activePiece.shape[localI][localJ] === 1
             ) {
-              slot = 2
+              slot = activePiece.name
             }
           }
 
@@ -88,8 +89,33 @@ const App = (el: HTMLElement): P5 => {
           p.translate(j * SLOT_SIZE, i * SLOT_SIZE)
 
           if (slot === 1) p.fill(255)
-          else if (slot === 2) p.fill(120, 0, 150)
-          else p.fill(200 - i * 4, 200 - i * 4, 150 - i * 4, 0)
+          else {
+            switch (slot) {
+              case 'I':
+                p.fill(0, 255, 255)
+                break
+              case 'J':
+                p.fill(0, 0, 255)
+                break
+              case 'L':
+                p.fill(255, 165, 0)
+                break
+              case 'O':
+                p.fill(255, 255, 0)
+                break
+              case 'S':
+                p.fill(0, 255, 0)
+                break
+              case 'T':
+                p.fill(128, 0, 128)
+                break
+              case 'Z':
+                p.fill(255, 0, 0)
+                break
+              default:
+                p.fill(0, 0, 0, 0)
+            }
+          }
 
           p.box(SLOT_SIZE)
           p.pop()

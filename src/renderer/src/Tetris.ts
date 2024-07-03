@@ -105,10 +105,6 @@ class Field {
    * Les cases du terrain de jeu
    */
   public slots: (number | string)[][]
-  /**
-   * La pièce active
-   */
-  public activePiece?: Piece
 
   /**
    * @param options Les options du terrain de jeu
@@ -116,18 +112,6 @@ class Field {
   constructor(options: { width: number; height: number }) {
     this.slots = Array.from({ length: options.height }, () => {
       return Array.from({ length: options.width }, () => 0)
-    })
-  }
-
-  /**
-   * @param piece La pièce à ajouter
-   */
-  public addPiece(piece: Piece): void {
-    const center = this.slots[0].length / 2 - piece.shape[0].length / 2
-    this.activePiece = piece
-    this.activePiece.x = Math.floor(center)
-    this.activePiece.shape.map((row) => {
-      row.map((cell) => (cell ? this.activePiece!.name : 0))
     })
   }
 
@@ -142,42 +126,39 @@ class Field {
   /**
    * Pousse la pièce active vers le bas
    */
-  public push(): void {
-    if (!this.activePiece) return
-    while (!this.checkCollision('down')) this.activePiece.move('down')
-    this.placePiece()
+  public push(piece: Piece): void {
+    while (!this.checkCollision(piece, 'down')) piece.move('down')
+    this.placePiece(piece)
   }
 
   /**
    * @param action L'action à effectuer
    */
-  public update(action: Direction | 'rotate'): void {
-    if (!this.activePiece) return
-
-    const colide = this.checkCollision(action)
+  public computePosition(piece: Piece, action: Direction | 'rotate'): boolean {
+    const colide = this.checkCollision(piece, action)
 
     if (!colide) {
       if (action === 'rotate') {
-        this.activePiece.rotate()
+        piece.rotate()
       }
       if (['down', 'left', 'right'].includes(action)) {
-        this.activePiece.move(action as Direction)
+        piece.move(action as Direction)
       }
     } else {
       if (action === 'down') {
-        this.placePiece()
+        this.placePiece(piece)
+        return true
       }
     }
+    return false
   }
 
   /**
    * Vérifie si une action provoque une collision
    * @param action L'action à vérifier
    */
-  private checkCollision(action: Direction | 'rotate'): boolean {
-    if (!this.activePiece) return false
-
-    const localPiece: Piece = Object.create(this.activePiece)
+  private checkCollision(piece: Piece, action: Direction | 'rotate'): boolean {
+    const localPiece: Piece = Object.create(piece)
 
     const move = {
       x: action === 'left' ? -1 : action === 'right' ? 1 : 0,
@@ -204,18 +185,16 @@ class Field {
   /**
    * Place la pièce active sur le terrain de jeu
    */
-  private placePiece(): void {
-    this.activePiece!.shape.forEach((row, i) => {
-      const k = this.activePiece!.y + i
+  private placePiece(piece: Piece): void {
+    piece.shape.forEach((row, i) => {
+      const k = piece.y + i
       row.forEach((cell, j) => {
         if (cell) {
-          this.slots[k][this.activePiece!.x + j] = this.activePiece!.name
+          this.slots[k][piece.x + j] = piece.name
         }
       })
       if (this.slots[k]?.every((v) => v)) this.clearRow(k)
     })
-
-    this.activePiece = undefined
   }
 
   public reset(): void {
@@ -230,7 +209,7 @@ export class Game {
   /**
    * La pièce sauvegardée
    */
-  public saved?: Piece
+  public savedPiece?: Piece
   /**
    * Le terrain de jeu
    */
@@ -239,7 +218,10 @@ export class Game {
    * Indique si le jeu est en pause
    */
   private paused: boolean = false
-
+  /**
+   * La pièce active
+   */
+  public activePiece?: Piece
   /**
    * @param options Les options de la partie
    */
@@ -252,28 +234,44 @@ export class Game {
    */
   public update(): void {
     if (this.paused) return
-    this.field.update('down')
 
-    if (!this.field.activePiece) {
-      const keys = Object.keys(PIECES_SHAPES)
-      const random = Math.floor(Math.random() * keys.length)
-      const key = keys[random]
-      this.field.addPiece(new Piece(key as keyof typeof PIECES_SHAPES, PIECES_SHAPES[key]))
+    if (!this.activePiece) {
+      this.addPiece(Game.randomPiece)
+    } else {
+      const land = this.field.computePosition(this.activePiece, 'down')
+      if (land) this.addPiece(Game.randomPiece)
     }
 
     if (this.field.slots[0].some((v) => v)) this.gameOver()
+  }
+
+  private addPiece(piece: Piece): void {
+    const center = this.field.slots[0].length / 2 - piece.shape[0].length / 2
+    this.activePiece = piece
+    this.activePiece.x = Math.floor(center)
+    this.activePiece.shape.map((row) => {
+      row.map((cell) => (cell ? this.activePiece!.name : 0))
+    })
+  }
+
+  private static get randomPiece(): Piece {
+    const keys = Object.keys(PIECES_SHAPES)
+    const random = Math.floor(Math.random() * keys.length)
+    const key = keys[random]
+    return new Piece(key as keyof typeof PIECES_SHAPES, PIECES_SHAPES[key])
   }
 
   /**
    * @param name L'action à effectuer
    */
   public action(name: Direction | 'rotate' | 'push' | 'pause'): void {
+    if (!this.activePiece) return
     if (name === 'push') {
-      this.field.push()
+      this.field.push(this.activePiece)
     } else if (name === 'pause') {
       this.pause()
     } else {
-      this.field.update(name)
+      this.field.computePosition(this.activePiece, name)
     }
   }
 

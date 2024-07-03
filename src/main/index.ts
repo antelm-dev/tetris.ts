@@ -11,7 +11,7 @@ function createWindow(): void {
     autoHideMenuBar: false,
     resizable: false,
     maximizable: false,
-    backgroundMaterial: 'mica',
+    backgroundMaterial: 'acrylic',
     // frame: false,
     // transparent: true,
     alwaysOnTop: true,

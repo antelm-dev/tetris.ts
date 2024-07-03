@@ -1,8 +1,8 @@
 import P5 from 'p5'
-import * as Tetris from './Tetris'
 import { getWindowSize } from './utils'
+import Game from '../../../packages/tetris/src'
 
-const CONTROLS: Record<string, Tetris.Action> = {
+const CONTROLS: Record<string, string> = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
   ArrowDown: 'down',
@@ -14,7 +14,7 @@ const CONTROLS: Record<string, Tetris.Action> = {
 
 const SLOT_SIZE = 30
 const SPEED_RATE = 8
-const GAME = new Tetris.Game({
+const GAME = new Game({
   width: 10,
   height: 20
 })
@@ -24,8 +24,8 @@ function getAdjustedSlotPosition(arg: number): number {
 }
 
 const App = (el: HTMLElement): P5 => {
-  let currentAction: Tetris.Action | null = null
-
+  let currentAction: string | null = null
+  let currentRotationX = 0
   return new P5((p: P5) => {
     p.windowResized = (): void => {
       const size = getWindowSize()
@@ -34,6 +34,7 @@ const App = (el: HTMLElement): P5 => {
 
     p.setup = (): void => {
       const size = getWindowSize()
+      p.frameRate(60)
       p.createCanvas(size.width, size.height, p.WEBGL)
     }
 
@@ -48,16 +49,28 @@ const App = (el: HTMLElement): P5 => {
     }
 
     p.draw = (): void => {
-      p.frameRate(30)
       p.background(0, 0, 0, 0)
       p.directionalLight(255, 255, 255, 0, -0.5, -2)
       p.noStroke()
-      p.stroke(255, 255, 255, 50)
+      p.stroke(255)
+
+      let highest = 0
+
+      for (let i = 0; i < GAME.field.slots.length; i++) {
+        if (GAME.field.slots[i].some((slot) => slot)) {
+          highest = GAME.field.slots.length - i
+          break
+        }
+      }
+      const newRotation = -(highest + 1) / 30 + p.PI / 10
+
+      const rotationX = p.lerp(currentRotationX, newRotation, 0.1)
+      currentRotationX = rotationX
+      p.rotateX(rotationX)
       p.translate(
         getAdjustedSlotPosition(GAME.field.slots[0].length),
         getAdjustedSlotPosition(GAME.field.slots.length)
       )
-      p.rotateX(p.QUARTER_PI / 2)
       if (currentAction && Math.floor(p.frameCount % 2) === 0) {
         GAME.action(currentAction as any)
       }
@@ -127,7 +140,7 @@ const App = (el: HTMLElement): P5 => {
                 break
               default:
                 p.fill(0, 0, 0, 0)
-                p.stroke(255, 255, 255, 25)
+                p.stroke(255)
             }
           }
           if (slot !== 0) p.box(SLOT_SIZE)

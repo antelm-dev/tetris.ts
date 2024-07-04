@@ -8,13 +8,15 @@ export default class Field {
   /**
    * Les cases du terrain de jeu
    */
-  public slots: (number | string)[][]
-
+  private _slots: (number | string)[][]
+  public get slots(): (number | string)[][] {
+    return this._slots
+  }
   /**
    * @param options Les options du terrain de jeu
    */
   constructor(options: { width: number; height: number }) {
-    this.slots = Array.from({ length: options.height }, () => {
+    this._slots = Array.from({ length: options.height }, () => {
       return Array.from({ length: options.width }, () => 0)
     })
   }
@@ -23,8 +25,8 @@ export default class Field {
    * @param index L'index de la ligne à vider
    */
   public clearRow(index: number): void {
-    this.slots.splice(index, 1)
-    this.slots.unshift(Array.from({ length: this.slots[0].length }, () => 0))
+    this._slots.splice(index, 1)
+    this._slots.unshift(new Array(this._slots[0].length).fill(0))
   }
 
   /**
@@ -48,9 +50,9 @@ export default class Field {
         const newX = localPiece.x + dx + move.x
         return (
           newX <= -1 ||
-          newX >= this.slots[0].length ||
-          newY >= this.slots.length ||
-          (newY >= 0 && this.slots[newY][newX])
+          newX >= this._slots[0].length ||
+          newY >= this._slots.length ||
+          (newY >= 0 && this._slots[newY][newX])
         )
       })
     )
@@ -60,16 +62,22 @@ export default class Field {
    * Place la pièce active sur le terrain de jeu
    */
   public placePiece(piece: Piece): void {
+    const indexes: Set<number> = new Set()
     piece.shape.forEach((row, i) => {
       const k = piece.y + i
       row.forEach((cell, j) => {
-        if (cell) this.slots[k][piece.x + j] = piece.name
+        if (cell) {
+          this._slots[k][piece.x + j] = piece.name
+          indexes.add(k)
+        }
       })
-      if (this.slots[k]?.every((v) => v)) this.clearRow(k)
     })
+    for (const i of indexes) {
+      if (this._slots[i].every((v) => v)) this.clearRow(i)
+    }
   }
 
   public reset(): void {
-    this.slots = this.slots.map((row) => row.map(() => 0))
+    this._slots = this._slots.map((row) => row.map(() => 0))
   }
 }

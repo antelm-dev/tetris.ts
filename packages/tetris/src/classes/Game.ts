@@ -101,6 +101,7 @@ export default class Game {
   public push(piece: Piece): void {
     while (!this.field.checkCollision(piece, 'down')) piece.move('down')
     this.field.placePiece(piece)
+    this.activePiece = undefined
   }
   /**
    * Réinitialise la partie

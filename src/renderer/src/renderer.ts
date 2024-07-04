@@ -14,10 +14,12 @@ const CONTROLS: Record<string, string> = {
 
 const SLOT_SIZE = 30
 const SPEED_RATE = 8
+
 const GAME = new Game({
   width: 10,
   height: 20
 })
+
 const colors = {
   O: [203, 222, 16],
   I: [35, 242, 232],
@@ -27,6 +29,7 @@ const colors = {
   Z: [250, 10, 8],
   T: [132, 10, 145]
 }
+
 function getAdjustedSlotPosition(arg: number): number {
   return (-arg * SLOT_SIZE) / 2 + SLOT_SIZE / 2
 }
@@ -61,7 +64,16 @@ function compute(
 const App = (el: HTMLElement): P5 => {
   let currentAction: string | null = null
   let currentRotationX = 0
+  let actionDelay = 0
   return new P5((p: P5) => {
+    const createFloor = (length: number): void => {
+      Array.from({ length }, () => {
+        p.fill(0, 0, 0, 0)
+        p.translate(SLOT_SIZE, 0, 0)
+        p.box(SLOT_SIZE, 1, SLOT_SIZE)
+      })
+    }
+
     p.windowResized = (): void => {
       const size = getWindowSize()
       p.resizeCanvas(size.width, size.height, true)
@@ -74,24 +86,24 @@ const App = (el: HTMLElement): P5 => {
     }
 
     p.keyPressed = (e: KeyboardEvent): void => {
-      const move = ['left', 'right', 'down'].includes(CONTROLS[e.key])
-      if (move) currentAction = CONTROLS[e.key]
-      else GAME.action(CONTROLS[e.key] as any)
+      GAME.action(CONTROLS[e.key] as any)
     }
 
     p.keyReleased = (): void => {
       currentAction = null
-    }
-
-    const createFloor = (length: number) => {
-      Array.from({ length }, (_, y) => {
-        p.fill(0, 0, 0, 0)
-        p.translate(SLOT_SIZE, 0, 0)
-        p.box(SLOT_SIZE, 1, SLOT_SIZE)
-      })
+      actionDelay = 0
     }
 
     p.draw = (): void => {
+      if (p.keyIsPressed) {
+        if (actionDelay === 0) actionDelay = p.frameCount
+        const move = ['left', 'right', 'down'].includes(CONTROLS[p.key])
+
+        if (move && p.frameCount - actionDelay > 15) {
+          GAME.action(CONTROLS[p.key] as any)
+        }
+      }
+
       p.background(0, 0, 0, 0)
       p.noStroke()
       p.stroke(255)
@@ -104,8 +116,8 @@ const App = (el: HTMLElement): P5 => {
           break
         }
       }
-      const newRotation = -(highest + 1) / 30 + p.PI / 12
 
+      const newRotation = -(highest + 1) / 45 + p.PI / 12
       const rotationX = p.lerp(currentRotationX, newRotation, 0.1)
       currentRotationX = rotationX
 
@@ -117,14 +129,12 @@ const App = (el: HTMLElement): P5 => {
       //   -GAME.field.slots.length + highest * 1.2,
       //   -GAME.field.slots.length + p.sin(highest / 3) * 1.2
       // )
+
       p.rotateX(rotationX)
       p.translate(
         getAdjustedSlotPosition(GAME.field.slots[0].length),
         getAdjustedSlotPosition(GAME.field.slots.length)
       )
-      if (currentAction && Math.floor(p.frameCount % 2) === 0) {
-        GAME.action(currentAction as any)
-      }
 
       if (Math.floor(p.frameCount) % SPEED_RATE === 0) {
         GAME.update()

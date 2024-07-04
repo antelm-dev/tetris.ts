@@ -18,9 +18,44 @@ const GAME = new Game({
   width: 10,
   height: 20
 })
-
+const colors = {
+  O: [203, 222, 16],
+  I: [35, 242, 232],
+  J: [23, 12, 244],
+  L: [254, 165, 10],
+  S: [2, 245, 11],
+  Z: [250, 10, 8],
+  T: [132, 10, 145]
+}
 function getAdjustedSlotPosition(arg: number): number {
   return (-arg * SLOT_SIZE) / 2 + SLOT_SIZE / 2
+}
+
+function compute(
+  callback: (slot: string | number, rowIndex: number, cellIndex: number) => void
+): void {
+  for (let i = 0; i < GAME.field.slots.length; i++) {
+    for (let j = 0; j < GAME.field.slots[i].length; j++) {
+      let slot = GAME.field.slots[i][j]
+
+      if (GAME.activePiece) {
+        const activePiece = GAME.activePiece
+        const localI = i - activePiece.y
+        const localJ = j - activePiece.x
+
+        if (
+          localI >= 0 &&
+          localI < activePiece.shape.length &&
+          localJ >= 0 &&
+          localJ < activePiece.shape[localI].length &&
+          activePiece.shape[localI][localJ]
+        ) {
+          slot = activePiece.name
+        }
+      }
+      callback(slot, i, j)
+    }
+  }
 }
 
 const App = (el: HTMLElement): P5 => {
@@ -48,9 +83,16 @@ const App = (el: HTMLElement): P5 => {
       currentAction = null
     }
 
+    const createFloor = (length: number) => {
+      Array.from({ length }, (_, y) => {
+        p.fill(0, 0, 0, 0)
+        p.translate(SLOT_SIZE, 0, 0)
+        p.box(SLOT_SIZE, 1, SLOT_SIZE)
+      })
+    }
+
     p.draw = (): void => {
       p.background(0, 0, 0, 0)
-      p.directionalLight(255, 255, 255, 0, -0.5, -2)
       p.noStroke()
       p.stroke(255)
 
@@ -62,10 +104,19 @@ const App = (el: HTMLElement): P5 => {
           break
         }
       }
-      const newRotation = -(highest + 1) / 30 + p.PI / 10
+      const newRotation = -(highest + 1) / 30 + p.PI / 12
 
       const rotationX = p.lerp(currentRotationX, newRotation, 0.1)
       currentRotationX = rotationX
+
+      // p.directionalLight(
+      //   255,
+      //   255,
+      //   255,
+      //   1,
+      //   -GAME.field.slots.length + highest * 1.2,
+      //   -GAME.field.slots.length + p.sin(highest / 3) * 1.2
+      // )
       p.rotateX(rotationX)
       p.translate(
         getAdjustedSlotPosition(GAME.field.slots[0].length),
@@ -83,71 +134,28 @@ const App = (el: HTMLElement): P5 => {
 
       p.translate(-SLOT_SIZE, GAME.field.slots.length * SLOT_SIZE + -SLOT_SIZE / 2, 0)
 
-      Array.from({ length: GAME.field.slots[0].length }, (_, y) => {
-        p.fill(0, 0, 0, 0)
-        p.translate(SLOT_SIZE, 0, 0)
-        p.box(SLOT_SIZE, 1, SLOT_SIZE)
-      })
+      createFloor(GAME.field.slots[0].length)
 
       p.pop()
-
-      for (let i = 0; i < GAME.field.slots.length; i++) {
-        for (let j = 0; j < GAME.field.slots[i].length; j++) {
-          let slot = GAME.field.slots[i][j]
-
-          if (GAME.activePiece) {
-            const activePiece = GAME.activePiece
-            const localI = i - activePiece.y
-            const localJ = j - activePiece.x
-
-            if (
-              localI >= 0 &&
-              localI < activePiece.shape.length &&
-              localJ >= 0 &&
-              localJ < activePiece.shape[localI].length &&
-              activePiece.shape[localI][localJ] === 1
-            ) {
-              slot = activePiece.name
-            }
+      compute((slot, i, j) => {
+        p.push()
+        p.translate(j * SLOT_SIZE, i * SLOT_SIZE)
+        if (slot === 0) p.translate(0, 0, -SLOT_SIZE)
+        if (slot === 1) p.fill(255)
+        else {
+          if (Object.keys(colors).includes(slot as string)) {
+            const [r, g, b] = colors[slot]
+            p.fill(r, g, b)
+          } else {
+            p.fill(0, 0, 0, 0)
+            p.stroke(255)
           }
-
-          p.push()
-          p.translate(j * SLOT_SIZE, i * SLOT_SIZE)
-          if (slot === 0) p.translate(0, 0, -SLOT_SIZE)
-          if (slot === 1) p.fill(255)
-          else {
-            switch (slot) {
-              case 'I':
-                p.fill(0, 255, 255)
-                break
-              case 'J':
-                p.fill(0, 0, 255)
-                break
-              case 'L':
-                p.fill(255, 165, 0)
-                break
-              case 'O':
-                p.fill(255, 255, 0)
-                break
-              case 'S':
-                p.fill(0, 255, 0)
-                break
-              case 'T':
-                p.fill(128, 0, 128)
-                break
-              case 'Z':
-                p.fill(255, 0, 0)
-                break
-              default:
-                p.fill(0, 0, 0, 0)
-                p.stroke(255)
-            }
-          }
-          if (slot !== 0) p.box(SLOT_SIZE)
-          else p.box(SLOT_SIZE, SLOT_SIZE, 1)
-          p.pop()
         }
-      }
+
+        if (slot !== 0) p.box(SLOT_SIZE)
+        else p.box(SLOT_SIZE, SLOT_SIZE, 1)
+        p.pop()
+      })
     }
   }, el)
 }

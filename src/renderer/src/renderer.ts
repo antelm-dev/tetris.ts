@@ -12,7 +12,7 @@ const CONTROLS: Record<string, string> = {
   ' ': 'push'
 }
 
-const SLOT_SIZE = 20
+const SLOT_SIZE = 30
 const SPEED_RATE = 8
 
 const GAME = new Tetris({
@@ -87,6 +87,7 @@ const render = (el: HTMLElement): P5 => {
 
     p.keyPressed = (e: KeyboardEvent): void => {
       GAME.action(CONTROLS[e.key] as any)
+      actionDelay = p.frameCount
     }
 
     p.keyReleased = (): void => {
@@ -128,7 +129,7 @@ const render = (el: HTMLElement): P5 => {
         if (actionDelay === 0) actionDelay = p.frameCount
         const move = ['left', 'right', 'down'].includes(CONTROLS[p.key])
 
-        if (move && p.frameCount - actionDelay > 15) {
+        if (move && p.frameCount - actionDelay > 15 && Math.floor(p.frameCount % 2) === 0) {
           GAME.action(CONTROLS[p.key] as any)
         }
       }
@@ -140,14 +141,12 @@ const render = (el: HTMLElement): P5 => {
         if (slot === 0) p.translate(0, 0, -SLOT_SIZE)
 
         if (slot === 1) p.fill(255)
-        else {
-          if (Object.keys(colors).includes(slot as string)) {
-            const [r, g, b] = colors[slot]
-            p.fill(r, g, b)
-          } else {
-            p.fill(0, 0, 0, 0)
-            p.stroke(255)
-          }
+        else if (Object.keys(colors).includes(slot as string)) {
+          const [r, g, b] = colors[slot]
+          p.fill(r, g, b)
+        } else {
+          p.fill(0, 0, 0, 0)
+          p.stroke(255)
         }
 
         if (slot !== 0) p.box(SLOT_SIZE)

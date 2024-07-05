@@ -11,18 +11,22 @@ export default class Game {
    * La pièce sauvegardée
    */
   public savedPiece?: Piece
+
   /**
    * Le terrain de jeu
    */
   public field: Field
+
   /**
    * Indique si le jeu est en pause
    */
   private paused: boolean = false
+
   /**
    * La pièce active
    */
   public activePiece?: Piece
+
   /**
    * @param options Les options de la partie
    */
@@ -40,17 +44,13 @@ export default class Game {
       this.addPiece(Game.randomPiece)
     } else {
       const land = this.field.checkCollision(this.activePiece, 'down')
-
-      if (land) {
-        this.field.placePiece(this.activePiece)
-        this.activePiece = undefined
-      } else {
-        this.activePiece.move('down')
-      }
+      if (land) this.push(this.activePiece)
+      else this.activePiece.move('down')
     }
 
     if (this.field.slots[0].some((v) => v)) this.gameOver()
   }
+
   /**
    * @param piece La pièce à ajouter
    */
@@ -62,6 +62,7 @@ export default class Game {
       row.map((cell) => (cell ? this.activePiece!.name : 0))
     })
   }
+
   /**
    * @returns Une pièce aléatoire
    */
@@ -83,9 +84,7 @@ export default class Game {
       this.pause()
     } else {
       const colide = this.field.checkCollision(this.activePiece, name)
-      if (colide) {
-        return
-      }
+      if (colide) return
       if (name === 'rotate') {
         this.activePiece.rotate()
       }
@@ -103,6 +102,7 @@ export default class Game {
     this.field.placePiece(piece)
     this.activePiece = undefined
   }
+
   /**
    * Réinitialise la partie
    */

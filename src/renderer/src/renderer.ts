@@ -1,21 +1,21 @@
 import P5 from 'p5'
 import { getWindowSize } from './utils'
-import Game from '../../../packages/tetris/src'
+import Tetris from '../../../packages/tetris/src'
 
 const CONTROLS: Record<string, string> = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
   ArrowDown: 'down',
   ArrowUp: 'rotate',
-  ' ': 'push',
+  Shift: 'hold',
   p: 'pause',
-  Shift: 'hold'
+  ' ': 'push'
 }
 
-const SLOT_SIZE = 30
+const SLOT_SIZE = 20
 const SPEED_RATE = 8
 
-const GAME = new Game({
+const GAME = new Tetris({
   width: 10,
   height: 20
 })
@@ -56,13 +56,13 @@ function compute(
           slot = activePiece.name
         }
       }
+
       callback(slot, i, j)
     }
   }
 }
 
-const App = (el: HTMLElement): P5 => {
-  let currentAction: string | null = null
+const render = (el: HTMLElement): P5 => {
   let currentRotationX = 0
   let actionDelay = 0
   return new P5((p: P5) => {
@@ -90,45 +90,21 @@ const App = (el: HTMLElement): P5 => {
     }
 
     p.keyReleased = (): void => {
-      currentAction = null
       actionDelay = 0
     }
 
     p.draw = (): void => {
-      if (p.keyIsPressed) {
-        if (actionDelay === 0) actionDelay = p.frameCount
-        const move = ['left', 'right', 'down'].includes(CONTROLS[p.key])
-
-        if (move && p.frameCount - actionDelay > 15) {
-          GAME.action(CONTROLS[p.key] as any)
-        }
-      }
+      p.orbitControl()
 
       p.background(0, 0, 0, 0)
       p.noStroke()
       p.stroke(255)
 
-      let highest = 0
-
-      for (let i = 0; i < GAME.field.slots.length; i++) {
-        if (GAME.field.slots[i].some((slot) => slot)) {
-          highest = GAME.field.slots.length - i
-          break
-        }
-      }
-
+      const highestIndex = GAME.field.slots.findIndex((row) => row.some((slot) => slot))
+      const highest = highestIndex !== -1 ? GAME.field.slots.length - highestIndex : 0
       const newRotation = -(highest + 1) / 45 + p.PI / 12
-      const rotationX = p.lerp(currentRotationX, newRotation, 0.1)
+      const rotationX = p.lerp(currentRotationX, newRotation, 0.05)
       currentRotationX = rotationX
-
-      // p.directionalLight(
-      //   255,
-      //   255,
-      //   255,
-      //   1,
-      //   -GAME.field.slots.length + highest * 1.2,
-      //   -GAME.field.slots.length + p.sin(highest / 3) * 1.2
-      // )
 
       p.rotateX(rotationX)
       p.translate(
@@ -147,10 +123,22 @@ const App = (el: HTMLElement): P5 => {
       createFloor(GAME.field.slots[0].length)
 
       p.pop()
+
+      if (p.keyIsPressed) {
+        if (actionDelay === 0) actionDelay = p.frameCount
+        const move = ['left', 'right', 'down'].includes(CONTROLS[p.key])
+
+        if (move && p.frameCount - actionDelay > 15) {
+          GAME.action(CONTROLS[p.key] as any)
+        }
+      }
+
       compute((slot, i, j) => {
         p.push()
         p.translate(j * SLOT_SIZE, i * SLOT_SIZE)
+
         if (slot === 0) p.translate(0, 0, -SLOT_SIZE)
+
         if (slot === 1) p.fill(255)
         else {
           if (Object.keys(colors).includes(slot as string)) {
@@ -171,5 +159,5 @@ const App = (el: HTMLElement): P5 => {
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
-  App(document.getElementById('root')!)
+  render(document.getElementById('root')!)
 })

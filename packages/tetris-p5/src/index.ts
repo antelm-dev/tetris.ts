@@ -50,10 +50,31 @@ function grid(
   }
 }
 
+function getSlot(i: number, j: number): number | string {
+  let slot = GAME.field.slots[i][j]
+
+  if (GAME.activePiece) {
+    const activePiece = GAME.activePiece
+    const localI = i - activePiece.y
+    const localJ = j - activePiece.x
+
+    if (
+      localI >= 0 &&
+      localI < activePiece.shape.length &&
+      localJ >= 0 &&
+      localJ < activePiece.shape[localI].length &&
+      activePiece.shape[localI][localJ]
+    ) {
+      slot = activePiece.name
+    }
+  }
+  return slot
+}
+
 const render = (el: HTMLElement): P5 => {
   let actionDelay = 0
   return new P5((p: P5) => {
-    const drawFloor = (length: number): void => {
+    const drawWall = (length: number): void => {
       Array.from({ length }, () => {
         p.fill(0, 0, 0, 0)
         p.translate(SLOT_SIZE, 0, 0)
@@ -69,6 +90,27 @@ const render = (el: HTMLElement): P5 => {
           p.translate((j * SLOT_SIZE) / 2, (i * SLOT_SIZE) / 2)
           p.box(SLOT_SIZE / 2)
         }
+        p.pop()
+      })
+    }
+
+    const drawField = (): void => {
+      grid(GAME.field.slots.length, GAME.field.slots[0].length, (i, j) => {
+        const slot = getSlot(i, j)
+        p.push()
+        p.translate(j * SLOT_SIZE, i * SLOT_SIZE)
+
+        if (slot === 0) p.translate(0, 0, -SLOT_SIZE)
+        if (slot === 1) p.fill(255)
+        else if (Object.keys(colors).includes(slot as string)) {
+          p.fill(...(colors[slot] as [number, number, number]))
+        } else {
+          p.noFill()
+          p.stroke(strokeColor)
+        }
+
+        if (slot !== 0) p.box(SLOT_SIZE)
+        else p.box(SLOT_SIZE, SLOT_SIZE, 1)
         p.pop()
       })
     }
@@ -145,44 +187,11 @@ const render = (el: HTMLElement): P5 => {
 
       p.translate(-SLOT_SIZE, SLOT_SIZE * GAME.field.slots.length - SLOT_SIZE / 2)
 
-      drawFloor(GAME.field.slots[0].length)
+      drawWall(GAME.field.slots[0].length)
 
       p.pop()
 
-      grid(GAME.field.slots.length, GAME.field.slots[0].length, (i, j) => {
-        let slot = GAME.field.slots[i][j]
-
-        if (GAME.activePiece) {
-          const activePiece = GAME.activePiece
-          const localI = i - activePiece.y
-          const localJ = j - activePiece.x
-
-          if (
-            localI >= 0 &&
-            localI < activePiece.shape.length &&
-            localJ >= 0 &&
-            localJ < activePiece.shape[localI].length &&
-            activePiece.shape[localI][localJ]
-          ) {
-            slot = activePiece.name
-          }
-        }
-        p.push()
-        p.translate(j * SLOT_SIZE, i * SLOT_SIZE)
-
-        if (slot === 0) p.translate(0, 0, -SLOT_SIZE)
-        if (slot === 1) p.fill(255)
-        else if (Object.keys(colors).includes(slot as string)) {
-          p.fill(...(colors[slot] as [number, number, number]))
-        } else {
-          p.noFill()
-          p.stroke(strokeColor)
-        }
-
-        if (slot !== 0) p.box(SLOT_SIZE)
-        else p.box(SLOT_SIZE, SLOT_SIZE, 1)
-        p.pop()
-      })
+      drawField()
 
       p.pop()
     }

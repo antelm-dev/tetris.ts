@@ -37,16 +37,9 @@ export default class Piece {
    * @param dir La direction de la rotation
    */
   public rotate(dir: Omit<Direction, 'down'> = 'right'): void {
-    // Transpose la matrice
     const transposed = this.shape[0].map((_, i) => this.shape.map((row) => row[i]))
-
-    if (dir === 'right') {
-      // Pour une rotation à droite, inverse chaque ligne après la transposition
-      this.shape = transposed.map((row) => row.toReversed())
-    } else {
-      // Pour une rotation à gauche, inverse la matrice transposée avant de l'assigner
-      this.shape = transposed.toReversed()
-    }
+    if (dir === 'right') this.shape = transposed.map((row) => row.toReversed())
+    else this.shape = transposed.toReversed()
   }
   /**
    * Déplace la pièce

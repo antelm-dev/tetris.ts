@@ -1,7 +1,7 @@
 import Field from './Field'
 import Piece from './Piece'
 import { PIECES_SHAPES } from '../const'
-import type { Direction } from '../types'
+import type { Direction, Rotate } from '../types'
 
 /**
  * Classe représentant une partie de Tetris
@@ -97,7 +97,7 @@ export default class Game {
   /**
    * @param name L'action à effectuer
    */
-  public action(name: Direction | 'rotate' | 'hold' | 'push' | 'pause'): void {
+  public action(name: Direction | Rotate | 'hold' | 'push' | 'pause'): void {
     if (!this.activePiece) return
     if (name === 'push') this.push(this.activePiece)
     else if (name === 'pause') this.pause()
@@ -105,7 +105,7 @@ export default class Game {
       const colide = this.field.checkCollision(this.activePiece, name)
       if (colide) return
       if (name === 'hold') this.hold()
-      if (name === 'rotate') this.activePiece.rotate()
+      if (name.startsWith('rotate')) this.activePiece.rotate(name.split('-')[1])
       if (['down', 'left', 'right'].includes(name)) {
         this.activePiece.move(name as Direction)
       }

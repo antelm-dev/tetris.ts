@@ -1,4 +1,4 @@
-import { Direction } from '../types'
+import { Direction, Rotate } from '../types'
 import type Piece from './Piece'
 
 /**
@@ -33,7 +33,7 @@ export default class Field {
    * Vérifie si une action provoque une collision
    * @param action L'action à vérifier
    */
-  public checkCollision(piece: Piece, action: Direction | 'rotate'): boolean {
+  public checkCollision(piece: Piece, action: Direction | Rotate): boolean {
     const localPiece: Piece = Object.create(piece)
 
     const move = {
@@ -41,7 +41,9 @@ export default class Field {
       y: action === 'down' ? 1 : 0
     }
 
-    if (action === 'rotate') localPiece.rotate()
+    if (action?.startsWith('rotate')) {
+      localPiece.rotate(action.split('-')[1])
+    }
 
     return localPiece.shape.some((row, dy) =>
       row.some((cell, dx) => {

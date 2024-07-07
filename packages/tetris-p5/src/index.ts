@@ -7,7 +7,8 @@ const CONTROLS: Record<string, string> = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
   ArrowDown: 'down',
-  ArrowUp: 'rotate',
+  z: 'rotate-right',
+  x: 'rotate-left',
   Shift: 'hold',
   p: 'pause',
   ' ': 'push'

@@ -23,6 +23,7 @@ export default class Game {
    * La pièce sauvegardée
    */
   public holdPiece?: Piece
+  private canHold = true
 
   /**
    * Le terrain de jeu
@@ -118,6 +119,7 @@ export default class Game {
     while (!this.field.checkCollision(piece, 'down')) piece.move('down')
     this.field.placePiece(piece)
     this.activePiece = undefined
+    this.canHold = true
   }
 
   /**
@@ -135,11 +137,12 @@ export default class Game {
   }
 
   public hold(): void {
-    if (!this.activePiece) return
+    if (!this.canHold || !this.activePiece) return
     const piece = new Piece(this.activePiece.name, this.activePiece.shape)
     this.activePiece = undefined
     if (this.holdPiece) this.addPiece(this.holdPiece)
     else this.addNextPiece()
     this.holdPiece = piece
+    this.canHold = false
   }
 }

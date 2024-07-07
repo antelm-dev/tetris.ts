@@ -50,7 +50,6 @@ function grid(
 }
 
 const render = (el: HTMLElement): P5 => {
-  let currentRotationX = 0
   let actionDelay = 0
   return new P5((p: P5) => {
     const drawFloor = (length: number): void => {
@@ -61,7 +60,7 @@ const render = (el: HTMLElement): P5 => {
       })
     }
 
-    const drawPiece = (piece: Piece): void => {
+    const drawPiecePreview = (piece: Piece): void => {
       grid(4, 4, (i, j) => {
         p.push()
         if (piece.shape[i]?.[j]) {
@@ -118,24 +117,24 @@ const render = (el: HTMLElement): P5 => {
 
       for (const piece of GAME.nextPieces) {
         p.translate(0, -SLOT_SIZE * 3, 0)
-        drawPiece(piece)
+        drawPiecePreview(piece)
       }
 
       p.pop()
 
       p.push()
       p.translate(-SLOT_SIZE * 7, -SLOT_SIZE * 10 + SLOT_SIZE / 4, 0)
-      if (GAME.holdPiece) drawPiece(GAME.holdPiece)
+      if (GAME.holdPiece) drawPiecePreview(GAME.holdPiece)
 
       p.pop()
 
       p.push()
-      const highestIndex = GAME.field.slots.findIndex((row) => row.some((slot) => slot))
-      const highest = highestIndex !== -1 ? GAME.field.slots.length - highestIndex : 0
-      const newRotation = -(highest + 1) / 45 + p.PI / 12
-      const rotationX = p.lerp(currentRotationX, newRotation, 0.05)
-      currentRotationX = rotationX
-      //  p.rotateX(rotationX)
+      // const highestIndex = GAME.field.slots.findIndex((row) => row.some((slot) => slot))
+      // const highest = highestIndex !== -1 ? GAME.field.slots.length - highestIndex : 0
+      // const newRotation = -(highest + 1) / 45 + p.PI / 12
+      // const rotationX = p.lerp(currentRotationX, newRotation, 0.05)
+      // currentRotationX = rotationX
+      // p.rotateX(rotationX)
       p.translate(
         getAdjustedSlotPosition(GAME.field.slots[0].length),
         getAdjustedSlotPosition(GAME.field.slots.length)

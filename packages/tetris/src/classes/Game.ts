@@ -8,9 +8,21 @@ import type { Direction } from '../types'
  */
 export default class Game {
   /**
+   * Le score de la partie
+   */
+  public score = 0
+  /**
+   * Le nombre de lignes consécutives
+   */
+  public streak = 0
+  /**
+   * Les pièces à venir
+   */
+  public nextPieces: Piece[] = []
+  /**
    * La pièce sauvegardée
    */
-  public savedPiece?: Piece
+  public holdPiece?: Piece
 
   /**
    * Le terrain de jeu
@@ -32,6 +44,7 @@ export default class Game {
    */
   constructor(options: { width: number; height: number }) {
     this.field = new Field(options)
+    this.nextPieces = Array.from({ length: 4 }, () => Game.randomPiece)
   }
 
   /**
@@ -41,7 +54,7 @@ export default class Game {
     if (this.paused) return
 
     if (!this.activePiece) {
-      this.addPiece(Game.randomPiece)
+      this.addNextPiece()
     } else {
       const land = this.field.checkCollision(this.activePiece, 'down')
       if (land) this.push(this.activePiece)
@@ -64,6 +77,13 @@ export default class Game {
   }
 
   /**
+   *
+   */
+  private addNextPiece(): void {
+    this.addPiece(this.nextPieces.pop()!)
+    this.nextPieces.unshift(Game.randomPiece)
+  }
+  /**
    * @returns Une pièce aléatoire
    */
   private static get randomPiece(): Piece {
@@ -76,18 +96,15 @@ export default class Game {
   /**
    * @param name L'action à effectuer
    */
-  public action(name: Direction | 'rotate' | 'push' | 'pause'): void {
+  public action(name: Direction | 'rotate' | 'hold' | 'push' | 'pause'): void {
     if (!this.activePiece) return
-    if (name === 'push') {
-      this.push(this.activePiece)
-    } else if (name === 'pause') {
-      this.pause()
-    } else {
+    if (name === 'push') this.push(this.activePiece)
+    else if (name === 'pause') this.pause()
+    else {
       const colide = this.field.checkCollision(this.activePiece, name)
       if (colide) return
-      if (name === 'rotate') {
-        this.activePiece.rotate()
-      }
+      if (name === 'hold') this.hold()
+      if (name === 'rotate') this.activePiece.rotate()
       if (['down', 'left', 'right'].includes(name)) {
         this.activePiece.move(name as Direction)
       }
@@ -115,5 +132,14 @@ export default class Game {
    */
   private pause(): void {
     this.paused = !this.paused
+  }
+
+  public hold(): void {
+    if (!this.activePiece) return
+    const piece = new Piece(this.activePiece.name, this.activePiece.shape)
+    this.activePiece = undefined
+    if (this.holdPiece) this.addPiece(this.holdPiece)
+    else this.addNextPiece()
+    this.holdPiece = piece
   }
 }

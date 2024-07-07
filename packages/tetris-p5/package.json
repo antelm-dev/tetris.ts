@@ -1,5 +1,5 @@
 {
-  "name": "tetris.ts",
+  "name": "@tetris.ts/p5",
   "version": "1.0.0",
   "description": "",
   "main": "src/index.ts",

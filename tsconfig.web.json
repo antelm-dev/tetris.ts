@@ -3,10 +3,11 @@
     "include": [
         "src/renderer/**/*.ts",
         "packages/tetris/**/*.ts",
+        "packages/tetris-p5/**/*.ts",
         "src/preload/*.d.ts",
         "index.d.ts",
         "packages/tetris/src/index.ts"
-    ],
+, "packages/tetris-p5/src/utils.ts"    ],
     "compilerOptions": {
         "composite": true
     }

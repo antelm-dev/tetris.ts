@@ -27,7 +27,7 @@ export default class Game {
    *
    */
   private canHold = true
-
+  private _gameOver = false
   /**
    * Le terrain de jeu
    */
@@ -48,6 +48,10 @@ export default class Game {
    */
   constructor(options: { width: number; height: number }) {
     this.field = new Field(options)
+    this.initQueue()
+  }
+
+  private initQueue(): void {
     this.nextPieces = Array.from({ length: 4 }, () => Game.randomPiece)
   }
 
@@ -55,7 +59,7 @@ export default class Game {
    * Met à jour la partie
    */
   public update(): void {
-    if (this.paused) return
+    if (this.paused || this._gameOver) return
 
     if (!this.activePiece) {
       this.addNextPiece()
@@ -98,13 +102,16 @@ export default class Game {
   }
 
   /**
-   * @param name L'action à effectuer
+   * @param name L'action à effectuer \
+   * TODO: Implémenter Command pattern
    */
   public action(name: Direction | Rotate | 'hold' | 'push' | 'pause'): void {
+    if (this._gameOver && name === 'push') this.start()
     if (!this.activePiece) return
     if (name === 'hold') this.hold()
-    else if (name === 'push') this.push(this.activePiece)
-    else if (name === 'pause') this.pause()
+    else if (name === 'push') {
+      this.push(this.activePiece)
+    } else if (name === 'pause') this.pause()
     else {
       const colide = this.field.checkCollision(this.activePiece, name)
       if (colide) return
@@ -129,7 +136,15 @@ export default class Game {
    * Réinitialise la partie
    */
   private gameOver(): void {
+    this._gameOver = true
+  }
+
+  private start(): void {
     this.field.reset()
+    this._gameOver = false
+    this.holdPiece = undefined
+    this.initQueue()
+    this.addNextPiece()
   }
 
   /**

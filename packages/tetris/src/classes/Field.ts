@@ -37,7 +37,11 @@ export default class Field {
     const localPiece: Piece = Object.create(piece)
 
     const move = {
-      x: action === 'left' ? -1 : action === 'right' ? 1 : 0,
+      x:
+        {
+          left: -1,
+          right: 1
+        }[action] ?? 0,
       y: action === 'down' ? 1 : 0
     }
 

@@ -24,6 +24,7 @@ export default class Piece {
    * Crée une pièce de Tetris
    * @param name Nom de la pièce
    * @param shape Forme de la pièce
+   *
    */
   public constructor(name: string, shape: number[][]) {
     this.shape = shape

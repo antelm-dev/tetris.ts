@@ -23,6 +23,9 @@ export default class Game {
    * La pièce sauvegardée
    */
   public holdPiece?: Piece
+  /**
+   *
+   */
   private canHold = true
 
   /**
@@ -99,12 +102,12 @@ export default class Game {
    */
   public action(name: Direction | Rotate | 'hold' | 'push' | 'pause'): void {
     if (!this.activePiece) return
-    if (name === 'push') this.push(this.activePiece)
+    if (name === 'hold') this.hold()
+    else if (name === 'push') this.push(this.activePiece)
     else if (name === 'pause') this.pause()
     else {
       const colide = this.field.checkCollision(this.activePiece, name)
       if (colide) return
-      if (name === 'hold') this.hold()
       if (name.startsWith('rotate')) this.activePiece.rotate(name.split('-')[1])
       if (['down', 'left', 'right'].includes(name)) {
         this.activePiece.move(name as Direction)

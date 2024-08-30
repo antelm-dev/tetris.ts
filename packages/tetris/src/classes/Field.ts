@@ -29,14 +29,8 @@ export default class Field {
     this._slots.unshift(new Array(this._slots[0].length).fill(0))
   }
 
-  /**
-   * Vérifie si une action provoque une collision
-   * @param action L'action à vérifier
-   */
-  public checkCollision(piece: Piece, action: Direction | Rotate): boolean {
-    const localPiece: Piece = Object.create(piece)
-
-    const move = {
+  private getNextMove(action: string): { x: number; y: number } {
+    return {
       x:
         {
           left: -1,
@@ -44,6 +38,16 @@ export default class Field {
         }[action] ?? 0,
       y: action === 'down' ? 1 : 0
     }
+  }
+
+  /**
+   * Vérifie si une action provoque une collision
+   * @param action L'action à vérifier
+   */
+  public checkCollision(piece: Piece, action: Direction | Rotate): boolean {
+    const localPiece: Piece = Object.create(piece)
+
+    const move = this.getNextMove(action)
 
     if (action?.startsWith('rotate')) {
       localPiece.rotate(action.split('-')[1])

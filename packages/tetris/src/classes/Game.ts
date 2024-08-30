@@ -65,7 +65,7 @@ export default class Game {
       this.addNextPiece()
     } else {
       const land = this.field.checkCollision(this.activePiece, 'down')
-      if (land) this.push(this.activePiece)
+      if (land) this.push()
       else this.activePiece.move('down')
     }
 
@@ -109,25 +109,23 @@ export default class Game {
     if (this._gameOver && name === 'push') this.start()
     if (!this.activePiece) return
     if (name === 'hold') this.hold()
-    else if (name === 'push') {
-      this.push(this.activePiece)
-    } else if (name === 'pause') this.pause()
+    else if (name === 'push') this.push()
+    else if (name === 'pause') this.pause()
     else {
       const colide = this.field.checkCollision(this.activePiece, name)
       if (colide) return
       if (name.startsWith('rotate')) this.activePiece.rotate(name.split('-')[1])
-      if (['down', 'left', 'right'].includes(name)) {
-        this.activePiece.move(name as Direction)
-      }
+      if (['down', 'left', 'right'].includes(name)) this.activePiece.move(name as Direction)
     }
   }
 
   /**
    * Pousse la pièce active vers le bas
    */
-  public push(piece: Piece): void {
-    while (!this.field.checkCollision(piece, 'down')) piece.move('down')
-    this.field.placePiece(piece)
+  public push(): void {
+    if (!this.activePiece) throw new Error('Active piece undefined')
+    while (!this.field.checkCollision(this.activePiece, 'down')) this.activePiece.move('down')
+    this.field.placePiece(this.activePiece)
     this.activePiece = undefined
     this.canHold = true
   }
@@ -153,7 +151,9 @@ export default class Game {
   private pause(): void {
     this.paused = !this.paused
   }
-
+  /**
+   * Sauvegarde la pièce active
+   */
   public hold(): void {
     if (!this.canHold || !this.activePiece) return
     const piece = new Piece(this.activePiece.name, this.activePiece.shape)

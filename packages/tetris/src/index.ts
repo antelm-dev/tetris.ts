@@ -1,2 +1,1 @@
-import { Game } from './classes'
-export default Game
+export * from './classes'

@@ -1,4 +1,4 @@
-import render from '../../../packages/tetris-p5/src'
+import render from '@tetris.ts/p5'
 
 window.addEventListener('DOMContentLoaded', async () => {
   render(document.getElementById('root')!)

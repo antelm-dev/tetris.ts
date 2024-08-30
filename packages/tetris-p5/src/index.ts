@@ -1,7 +1,6 @@
 import P5 from 'p5'
-import Tetris from '../../tetris/src'
 import { getWindowSize } from './utils'
-import { Piece } from '../../tetris/src/classes'
+import { Game, Piece } from 'tetris.ts'
 
 const CONTROLS: Record<string, string> = {
   ArrowLeft: 'left',
@@ -17,7 +16,7 @@ const CONTROLS: Record<string, string> = {
 const SLOT_SIZE = 30
 const SPEED_RATE = 20
 
-const GAME = new Tetris({
+const GAME = new Game({
   width: 10,
   height: 20
 })

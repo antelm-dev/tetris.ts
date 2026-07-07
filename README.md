@@ -1,4 +1,4 @@
-# tetris.ts2
+# tetris.ts
 
 A 3D Tetris (p5.js / WebGL) running on Electron. It merges two things:
 

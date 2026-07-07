@@ -21,11 +21,30 @@
     </div>
 
     <div id="hud">
-      <div><span class="hud-label">SCORE</span><span id="hud-score">0</span></div>
-      <div><span class="hud-label">BEST</span><span id="hud-best">0</span></div>
+      <div class="stat"><span class="hud-label">Score</span><span id="hud-score">0</span></div>
+      <div class="stat"><span class="hud-label">Best</span><span id="hud-best">0</span></div>
+      <div class="stat"><span class="hud-label">Level</span><span id="hud-level">1</span></div>
+      <div class="stat"><span class="hud-label">Lines</span><span id="hud-lines">0</span></div>
     </div>
 
     <div id="root"></div>
+
+    <div id="legend" aria-hidden="true">
+      <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> Move</span>
+      <span><kbd>&uarr;</kbd><kbd>Z</kbd> Rotate</span>
+      <span><kbd>&darr;</kbd> Soft&nbsp;drop</span>
+      <span><kbd>Space</kbd> Hard&nbsp;drop</span>
+      <span><kbd>Shift</kbd> Hold</span>
+      <span><kbd>Esc</kbd> Pause</span>
+    </div>
+
+    <!-- Center overlays: pause + game over -->
+    <div id="overlay" class="overlay" hidden>
+      <div id="overlay-card">
+        <h1 id="overlay-title">Paused</h1>
+        <p id="overlay-sub"></p>
+      </div>
+    </div>
 
     <div id="banner" hidden></div>
 

@@ -98,6 +98,113 @@ describe('Game', () => {
     expect(game.field.slots.flat().every((c) => c === 0)).toBe(true)
   })
 
+  it('wall-kicks a rotation that would otherwise collide with the floor', () => {
+    const game = newGame()
+    const piece = new Piece('T', [
+      [1, 1, 1],
+      [0, 1, 0]
+    ])
+    piece.x = 2
+    piece.y = 8 // flat on the floor: a naive rotate would poke through it
+    game.activePiece = piece
+    game.action('rotate-right')
+    // Rotated to the vertical T and kicked one row up to stay on the board.
+    expect(game.activePiece?.shape).toEqual([
+      [0, 1],
+      [1, 1],
+      [0, 1]
+    ])
+    expect(game.activePiece?.y).toBe(7)
+    expect(game.activePiece?.x).toBe(2)
+  })
+
+  it('detects a T-spin: rotating into a wedged slot scores a spin and fires onSpin', () => {
+    const game = newGame()
+    // Build a 1-wide T-slot at the bottom, fully enclosed so the landed T
+    // cannot shift in any direction (the generalized "immobile" spin rule).
+    game.field.slots[6][1] = 'O' // overhang above the flat (blocks up)
+    game.field.slots[7][0] = 'O' // wall left of the flat (blocks left)
+    game.field.slots[7][4] = 'O' // wall right of the flat (blocks right)
+    game.field.slots[9][2] = 'O' // floor under the nub (blocks down)
+
+    // T pointing right; a clockwise rotation turns it into the spawn shape that
+    // drops into the slot at (x=1, y=7) without needing a kick.
+    const piece = new Piece('T', [
+      [1, 0],
+      [1, 1],
+      [1, 0]
+    ])
+    piece.x = 1
+    piece.y = 7
+    game.activePiece = piece
+
+    let spun: { name: string; lines: number } | undefined
+    game.events.onSpin = (name, lines) => (spun = { name, lines })
+
+    game.action('rotate-right')
+    expect(game.activePiece?.shape).toEqual([
+      [1, 1, 1],
+      [0, 1, 0]
+    ])
+    game.push() // lock it in place
+
+    expect(spun).toEqual({ name: 'T', lines: 0 })
+    expect(game.score).toBe(100) // spin-without-clear bonus
+  })
+
+  it('scores a T-spin single higher than a normal single', () => {
+    const game = newGame()
+    // Same enclosed slot, but the flat row is one line away from complete so
+    // locking the T clears it — a T-spin single (800) beats a plain single (100).
+    game.field.slots[6][1] = 'O'
+    game.field.slots[7][0] = 'O'
+    game.field.slots[7][4] = 'O'
+    game.field.slots[7][5] = 'O' // fill the last column so row 7 completes
+    game.field.slots[9][2] = 'O'
+
+    const piece = new Piece('T', [
+      [1, 0],
+      [1, 1],
+      [1, 0]
+    ])
+    piece.x = 1
+    piece.y = 7
+    game.activePiece = piece
+
+    game.action('rotate-right')
+    game.push()
+
+    expect(game.score).toBe(800)
+    expect(game.lines).toBe(1)
+  })
+
+  it('does not count a spin when the last action was a move, not a rotation', () => {
+    const game = newGame()
+    game.field.slots[6][1] = 'O'
+    game.field.slots[7][0] = 'O'
+    game.field.slots[7][4] = 'O'
+    game.field.slots[9][2] = 'O'
+
+    // Already in the spawn shape and slot, but we nudge (a no-op against the
+    // right wall) so the last action is a move -> the lock must not be a spin.
+    const piece = new Piece('T', [
+      [1, 1, 1],
+      [0, 1, 0]
+    ])
+    piece.x = 1
+    piece.y = 7
+    game.activePiece = piece
+
+    let spun = false
+    game.events.onSpin = () => (spun = true)
+
+    game.action('right') // blocked by the enclosing wall, but still a "move"
+    game.push()
+
+    expect(spun).toBe(false)
+    expect(game.score).toBe(0)
+  })
+
   it('toggles pause, halting updates', () => {
     const game = newGame()
     game.activePiece = new Piece('O', [[1]])

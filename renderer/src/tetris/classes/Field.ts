@@ -4,6 +4,13 @@ import type Piece from './Piece'
 export default class Field {
   private _slots: Slot[][]
 
+  /**
+   * Row indices completed by the most recent `placePiece` call, captured
+   * *before* they collapse. Purely informational — the renderer reads it to
+   * position line-clear effects.
+   */
+  public lastCleared: number[] = []
+
   public get slots(): Slot[][] {
     return this._slots
   }
@@ -35,6 +42,48 @@ export default class Field {
         return y >= 0 && !!this._slots[y]?.[x]
       })
     )
+  }
+
+  /**
+   * True if `piece`, at its current position and shape, overlaps a wall, the
+   * floor, or a filled cell. Unlike {@link overlaps} this also enforces the
+   * board bounds, so it can validate arbitrary kick-tested placements.
+   */
+  public collides(piece: Piece): boolean {
+    return piece.shape.some((row, dy) =>
+      row.some((cell, dx) => {
+        if (!cell) return false
+        const x = piece.x + dx
+        const y = piece.y + dy
+        return (
+          x < 0 ||
+          x >= this._slots[0].length ||
+          y >= this._slots.length ||
+          (y >= 0 && !!this._slots[y][x])
+        )
+      })
+    )
+  }
+
+  /**
+   * True if `piece` cannot shift by a single cell in any of the four cardinal
+   * directions. This is the generalized "immobile" spin test: a piece that
+   * locks while immobile immediately after a rotation counts as a spin
+   * (T-spin, L-spin, S-spin, …).
+   */
+  public isImmobile(piece: Piece): boolean {
+    const dirs: [number, number][] = [
+      [0, -1],
+      [0, 1],
+      [-1, 0],
+      [1, 0]
+    ]
+    return dirs.every(([dx, dy]) => {
+      const probe = piece.clone()
+      probe.x += dx
+      probe.y += dy
+      return this.collides(probe)
+    })
   }
 
   public checkCollision(piece: Piece, action: Direction | Rotate): boolean {
@@ -77,6 +126,7 @@ export default class Field {
     const fullRows = [...indexes]
       .filter((i) => this._slots[i].every((v) => v))
       .sort((a, b) => a - b)
+    this.lastCleared = fullRows
     for (const i of fullRows) this.clearRow(i)
     return fullRows.length
   }

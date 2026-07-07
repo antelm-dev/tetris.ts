@@ -6,6 +6,8 @@ export default class Piece {
   public shape: number[][]
   public x = 0
   public y = 0
+  /** Rotation state 0–3 (0 = spawn), advanced by {@link rotate}. */
+  public orientation = 0
 
   public constructor(name: PieceName, shape: readonly (readonly number[])[]) {
     this.shape = shape.map((row) => [...row])
@@ -16,6 +18,7 @@ export default class Piece {
     const piece = new Piece(this.name, this.shape)
     piece.x = this.x
     piece.y = this.y
+    piece.orientation = this.orientation
     return piece
   }
 
@@ -23,6 +26,7 @@ export default class Piece {
     const transposed = this.shape[0].map((_, i) => this.shape.map((row) => row[i]))
     if (dir === 'right') this.shape = transposed.map((row) => row.toReversed())
     else this.shape = transposed.toReversed()
+    this.orientation = (this.orientation + (dir === 'right' ? 1 : 3)) % 4
   }
 
   public move(dir: Direction): void {

@@ -1,7 +1,9 @@
 :root {
-  --fg: #f0f0f0;
-  --accent: #23f2e8;
-  --bar: rgba(0, 0, 0, 0.35);
+  --fg: #eef2ff;
+  --accent: #56c8d6;
+  --accent-2: #a85cd6;
+  --bar: rgba(10, 12, 22, 0.55);
+  --panel: rgba(18, 22, 38, 0.5);
 }
 
 * {
@@ -12,16 +14,30 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #000;
   color: var(--fg);
+  /* Deep radial ambiance behind the transparent-edged WebGL canvas. */
+  background:
+    radial-gradient(120% 90% at 50% 8%, #1a2140 0%, #0a0d18 55%, #05060c 100%);
   font-family:
     ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+  user-select: none;
 }
 
 #root {
   display: block;
   width: 100vw;
   height: 100vh;
+}
+
+/* Subtle vignette + scanline sheen over the whole scene. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background:
+    radial-gradient(130% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
 }
 
 /* Custom titlebar (frameless window) --------------------------------------- */
@@ -35,17 +51,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 0 0 12px;
+  padding: 0 0 0 14px;
   background: var(--bar);
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(8px);
   z-index: 10;
 }
 
 #title {
   font-size: 12px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 #window-controls {
@@ -62,6 +78,7 @@ body {
   color: var(--fg);
   font-size: 13px;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
 #window-controls button:hover {
@@ -76,38 +93,174 @@ body {
 /* Score HUD ---------------------------------------------------------------- */
 #hud {
   position: absolute;
-  top: 46px;
-  left: 12px;
+  top: 50px;
+  left: 16px;
   z-index: 9;
   display: flex;
-  gap: 20px;
+  flex-direction: column;
+  gap: 12px;
   pointer-events: none;
+}
+
+#hud .stat {
+  padding: 8px 14px;
+  min-width: 96px;
+  background: var(--panel);
+  border: 1px solid rgba(120, 140, 200, 0.18);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
 #hud .hud-label {
   display: block;
   font-size: 10px;
-  letter-spacing: 0.2em;
-  opacity: 0.55;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  opacity: 0.5;
+  margin-bottom: 2px;
 }
 
-#hud-score,
-#hud-best {
-  font-size: 22px;
+#hud .stat span:last-child {
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 14px rgba(86, 200, 214, 0.35);
+}
+
+/* brief scale pulse when a stat updates */
+.bump {
+  display: inline-block;
+  animation: bump 0.28s ease;
+}
+
+@keyframes bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.28);
+    color: var(--accent);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Controls legend ---------------------------------------------------------- */
+#legend {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 18px;
+  padding: 9px 18px;
+  max-width: 92vw;
+  background: var(--bar);
+  border: 1px solid rgba(120, 140, 200, 0.16);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+#legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  text-align: center;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: rgba(120, 140, 200, 0.14);
+  border: 1px solid rgba(140, 160, 220, 0.28);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
+/* Center overlays (pause / game over) -------------------------------------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 12, 0.45);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.overlay.show {
+  opacity: 1;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+#overlay-card {
+  text-align: center;
+  padding: 30px 46px;
+  border-radius: 16px;
+  background: rgba(16, 20, 34, 0.72);
+  border: 1px solid rgba(120, 140, 200, 0.22);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  transform: translateY(8px) scale(0.96);
+  transition: transform 0.25s ease;
+}
+
+.overlay.show #overlay-card {
+  transform: translateY(0) scale(1);
+}
+
+#overlay-title {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 22px rgba(86, 200, 214, 0.5);
+}
+
+.overlay[data-kind='over'] #overlay-title {
+  color: #e45c68;
+  text-shadow: 0 0 22px rgba(228, 92, 104, 0.5);
+}
+
+#overlay-sub {
+  margin: 12px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
 }
 
 /* New-high-score banner ---------------------------------------------------- */
 #banner {
   position: absolute;
-  top: 40%;
+  top: 34%;
   left: 50%;
   transform: translate(-50%, -50%) scale(0.9);
-  z-index: 11;
+  z-index: 12;
   padding: 14px 26px;
   border: 2px solid var(--accent);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.7);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.72);
   color: var(--accent);
   font-size: 20px;
   letter-spacing: 0.1em;
@@ -115,6 +268,7 @@ body {
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
+  box-shadow: 0 0 30px rgba(86, 200, 214, 0.35);
   transition:
     opacity 0.25s ease,
     transform 0.25s ease;

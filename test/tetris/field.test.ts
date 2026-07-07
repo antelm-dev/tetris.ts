@@ -94,6 +94,41 @@ describe('Field', () => {
     expect(field.slots.slice(0, 4).flat().every((c) => c === 0)).toBe(true)
   })
 
+  it('collides reports walls, floor and filled cells at the current position', () => {
+    const field = new Field({ width: 4, height: 3 })
+    field.slots[1][1] = 'O'
+    const piece = new Piece('O', [[1]])
+    piece.x = -1 // off the left wall
+    expect(field.collides(piece)).toBe(true)
+    piece.x = 4 // off the right wall
+    expect(field.collides(piece)).toBe(true)
+    piece.x = 0
+    piece.y = 3 // below the floor
+    expect(field.collides(piece)).toBe(true)
+    piece.x = 1
+    piece.y = 1 // onto the filled cell
+    expect(field.collides(piece)).toBe(true)
+    piece.x = 0
+    piece.y = 0 // clear
+    expect(field.collides(piece)).toBe(false)
+  })
+
+  it('isImmobile is true only when the piece is wedged on all four sides', () => {
+    const field = new Field({ width: 3, height: 3 })
+    const piece = new Piece('O', [[1]])
+    // A single cell boxed in the middle: walls/blocks on every side.
+    field.slots[0][1] = 'O' // above
+    field.slots[2][1] = 'O' // below
+    field.slots[1][0] = 'O' // left
+    field.slots[1][2] = 'O' // right
+    piece.x = 1
+    piece.y = 1
+    expect(field.isImmobile(piece)).toBe(true)
+    // Open the cell above -> it can move up, so no longer immobile.
+    field.slots[0][1] = 0
+    expect(field.isImmobile(piece)).toBe(false)
+  })
+
   it('reset empties the field', () => {
     const field = new Field({ width: 3, height: 3 })
     field.slots[0][0] = 'O'

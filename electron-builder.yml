@@ -1,0 +1,29 @@
+appId: com.adelterki.tetris
+productName: tetris.ts
+directories:
+  output: release
+  buildResources: build
+# Everything is bundled by Rollup (main/preload) and Vite (renderer), so the
+# packaged app ships only the built output — no node_modules.
+icon: resources/icon.png
+files:
+  - dist-main/**
+  - dist-renderer/**
+  - resources/icon.png
+  - package.json
+  - '!node_modules/**/*'
+asar: true
+npmRebuild: false
+win:
+  target: nsis
+  executableName: tetris
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  createDesktopShortcut: always
+mac:
+  target: dmg
+  category: public.app-category.games
+linux:
+  target: AppImage
+  category: Game

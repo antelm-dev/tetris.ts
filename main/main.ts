@@ -1,0 +1,97 @@
+import { BrowserWindow, shell } from 'electron'
+import { readFile } from 'node:fs/promises'
+import { extname, join } from 'node:path'
+import { createIpcContainer } from 'electron-ipc-module'
+import { prepare } from './core/bootstrap.js'
+import { createCustomScheme } from './core/electron.js'
+import { env } from './env.js'
+import { gameIpc } from './ipc/game.ipc.js'
+import { systemIpc } from './ipc/system.ipc.js'
+import { windowIpc } from './ipc/window.ipc.js'
+
+const scheme = createCustomScheme(env.scheme, {
+  standard: true,
+  secure: true,
+  supportFetchAPI: true
+})
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.map': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2'
+}
+
+/** Serve the built renderer (`dist-renderer`) over the `app://` scheme. */
+async function serveClient(request: Request): Promise<Response> {
+  const { pathname } = new URL(request.url)
+  const relative = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.replace(/^\/+/, ''))
+  const file = join(env.paths.clientDir, relative)
+
+  try {
+    const data = await readFile(file)
+    const type = MIME_TYPES[extname(file)] ?? 'application/octet-stream'
+    return new Response(data, { headers: { 'content-type': type } })
+  } catch {
+    return new Response('Not found', { status: 404 })
+  }
+}
+
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: env.window.width,
+    height: env.window.height,
+    icon: env.paths.icon,
+    show: false,
+    autoHideMenuBar: true,
+    resizable: false,
+    maximizable: false,
+    backgroundColor: '#000000',
+    // Frameless so the renderer draws its own titlebar and drives min/close/
+    // fullscreen through the `window` IPC module.
+    frame: false,
+    webPreferences: {
+      preload: env.paths.preload,
+      sandbox: false
+    }
+  })
+
+  win.once('ready-to-show', () => win.show())
+
+  win.webContents.setWindowOpenHandler((details) => {
+    void shell.openExternal(details.url)
+    return { action: 'deny' }
+  })
+
+  if (env.production) {
+    void win.loadURL(env.urls.renderer)
+  } else {
+    void win.loadURL(env.devServerUrl)
+    // The Vite dev server may not be ready on the first attempt; retry.
+    win.webContents.on('did-fail-load', () => {
+      setTimeout(() => void win.loadURL(env.devServerUrl), 300)
+    })
+  }
+
+  return win
+}
+
+prepare({
+  onReady: async () => {
+    const ipc = createIpcContainer()
+    await ipc.loadAll({
+      system: systemIpc,
+      window: windowIpc,
+      game: gameIpc
+    })
+  },
+  protocols: env.production ? [{ scheme, handler: serveClient }] : [],
+  createWindow
+})

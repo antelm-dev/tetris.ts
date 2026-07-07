@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "types": ["node", "electron"],
+    "outDir": "./dist-main",
+    "rootDir": "./main",
+    "sourceMap": true
+  },
+  "include": ["main/preload.ts", "main/generated/ipc-bridge.ts"]
+}

@@ -1,28 +1,22 @@
 import Field from './Field'
 import Piece from './Piece'
-import { PIECES_SHAPES } from './const'
+import { PIECES_SHAPES, kicksFor } from './const'
 import type { PieceName } from './const'
 import type { Action, Direction, GameEvents } from './types'
 
 /**
- * Offsets (in cells) tried in order when a plain rotation collides — a
- * pragmatic "SRS-lite" wall-kick set. `y` is negative upward to match the
- * grid. The first offset that yields a valid placement wins; if none do, the
- * rotation is rejected. Nudging the piece into a tuck this way is what makes
- * spins physically possible.
+ * How long (ms) a grounded piece sits before it locks. The player's window to
+ * slide or spin it into place at the last moment — without it, a piece locks
+ * the instant gravity finds the floor and high levels become unplayable.
  */
-const WALL_KICKS: ReadonlyArray<readonly [number, number]> = [
-  [0, 0],
-  [-1, 0],
-  [1, 0],
-  [0, -1],
-  [-1, -1],
-  [1, -1],
-  [0, 1],
-  [-2, 0],
-  [2, 0],
-  [0, -2]
-]
+const LOCK_DELAY = 500
+
+/**
+ * How many times a move or rotation may restart the lock timer before the
+ * piece locks regardless. Caps the classic "spin it forever" stall while still
+ * giving finesse room. Landing on a *lower* row refills the budget.
+ */
+const MAX_LOCK_RESETS = 15
 
 /**
  * Score multiplier applied to a difficult clear (Tetris or any spin clear)
@@ -57,6 +51,11 @@ export default class Game {
   public lines = 0
   public level = 1
   public nextPieces: Piece[] = []
+  /**
+   * The remaining names in the current 7-bag, drawn from the end and refilled
+   * with a fresh shuffle once empty. See {@link nextPiece}.
+   */
+  private bag: PieceName[] = []
   public holdPiece?: Piece
   private canHold = true
   private _gameOver = false
@@ -66,6 +65,14 @@ export default class Game {
    * A lock only counts as a spin while this holds — any translation clears it.
    */
   private lastActionRotate = false
+  /** Whether that rotation needed a kick — the "was it forced?" half of a spin. */
+  private lastRotateKicked = false
+  /** Milliseconds the piece has been grounded. See {@link LOCK_DELAY}. */
+  private lockTimer = 0
+  /** Lock-timer restarts spent on the current piece. See {@link MAX_LOCK_RESETS}. */
+  private lockResets = 0
+  /** Deepest row the piece has reached; falling past it refills the reset budget. */
+  private lowestRow = -Infinity
   public activePiece?: Piece
   public field: Field
 
@@ -85,42 +92,110 @@ export default class Game {
     this.initQueue()
   }
 
+  /**
+   * Seed the preview queue. `nextPieces` is consumed from the end (see
+   * {@link addNextPiece}), so the initial fill is reversed to keep the order
+   * pieces are *dealt* in the order the bag produced them.
+   */
   private initQueue(): void {
-    this.nextPieces = Array.from({ length: 4 }, () => Game.randomPiece)
+    this.bag = []
+    this.nextPieces = Array.from({ length: 4 }, () => this.nextPiece()).reverse()
   }
 
+  /**
+   * One gravity step: spawn if the well is empty, otherwise fall a row. A
+   * grounded piece is deliberately left alone — it is {@link tick}, on the
+   * lock-delay clock, that decides when it stops being the player's problem.
+   */
   public update(): void {
     if (this.paused || this._gameOver) return
 
     if (!this.activePiece) {
       this.addNextPiece()
-    } else {
-      const land = this.field.checkCollision(this.activePiece, 'down')
-      if (land) this.push()
-      else {
-        this.activePiece.move('down')
-        this.lastActionRotate = false
-      }
+      return
     }
+    if (this.field.checkCollision(this.activePiece, 'down')) return
+    this.activePiece.move('down')
+    this.lastActionRotate = false
+    this.onDescend()
+  }
+
+  /**
+   * The lock-delay clock, advanced once per frame with `dt` in seconds.
+   *
+   * A grounded piece doesn't lock immediately: it gets {@link LOCK_DELAY}
+   * milliseconds, and any successful move or rotation restarts that countdown
+   * (up to {@link MAX_LOCK_RESETS} times). That grace period is what makes a
+   * last-second slide or spin possible at all — at level 13 gravity is a 70 ms
+   * tick, and without a lock delay the window to spin into a slot is a single
+   * frame. Lifting off the floor again cancels the countdown entirely.
+   */
+  public tick(dt: number): void {
+    if (this.paused || this._gameOver || !this.activePiece) return
+    if (!this.field.checkCollision(this.activePiece, 'down')) {
+      this.lockTimer = 0
+      return
+    }
+    this.lockTimer += dt * 1000
+    if (this.lockTimer >= LOCK_DELAY) this.push()
+  }
+
+  /** Restart the lock countdown after a successful move/rotate, budget allowing. */
+  private resetLock(): void {
+    if (!this.activePiece) return
+    if (!this.field.checkCollision(this.activePiece, 'down')) return
+    if (this.lockResets >= MAX_LOCK_RESETS) return
+    this.lockResets++
+    this.lockTimer = 0
+  }
+
+  /** Reaching a new deepest row is progress, so it refills the reset budget. */
+  private onDescend(): void {
+    if (!this.activePiece) return
+    const bottom = this.activePiece.bottom
+    if (bottom <= this.lowestRow) return
+    this.lowestRow = bottom
+    this.lockResets = 0
+    this.lockTimer = 0
   }
 
   private addPiece(piece: Piece): void {
     const center = this.field.slots[0].length / 2 - piece.shape[0].length / 2
     this.activePiece = piece
     this.activePiece.x = Math.floor(center)
+    this.clearPieceState()
     if (this.field.overlaps(this.activePiece)) this.setGameOver()
     else this.events.onSpawn?.(piece.name)
   }
 
   private addNextPiece(): void {
     this.addPiece(this.nextPieces.pop()!)
-    this.nextPieces.unshift(Game.randomPiece)
+    this.nextPieces.unshift(this.nextPiece())
   }
 
-  private static get randomPiece(): Piece {
-    const keys = Object.keys(PIECES_SHAPES) as PieceName[]
-    const key = keys[Math.floor(Math.random() * keys.length)]
-    return new Piece(key, PIECES_SHAPES[key])
+  /**
+   * Deal the next tetromino from the 7-bag.
+   *
+   * Uniform random draws are what let a real game go twenty pieces without an I
+   * — and hand out four in a row — so the guideline deals from a shuffled bag of
+   * all seven instead: every piece appears exactly once per bag, which bounds the
+   * worst-case drought at twelve pieces (last of one bag, first of the next) and
+   * makes the queue something a player can actually plan against.
+   */
+  private nextPiece(): Piece {
+    if (this.bag.length === 0) this.bag = Game.shuffledBag()
+    const name = this.bag.pop()!
+    return new Piece(name, PIECES_SHAPES[name])
+  }
+
+  /** All seven names in a fresh Fisher–Yates shuffle. */
+  private static shuffledBag(): PieceName[] {
+    const names = Object.keys(PIECES_SHAPES) as PieceName[]
+    for (let i = names.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[names[i], names[j]] = [names[j], names[i]]
+    }
+    return names
   }
 
   public action(name: Action): void {
@@ -134,36 +209,88 @@ export default class Game {
     if (name === 'hold') this.hold()
     else if (name === 'push') this.push(true)
     else if (name === 'pause') this.pause()
-    else if (name.startsWith('rotate')) {
-      this.tryRotate(name.split('-')[1] as 'left' | 'right')
-    } else {
-      if (this.field.checkCollision(this.activePiece, name)) return
-      this.activePiece.move(name as Direction)
-      this.lastActionRotate = false
-      if (name === 'left' || name === 'right') this.events.onMove?.(name)
+    else if (name === 'rotate-left' || name === 'rotate-right') {
+      this.tryRotate(name === 'rotate-left' ? 'left' : 'right')
+    } else this.moveActive(name)
+  }
+
+  /** A one-cell translation. A blocked move is a no-op — it is not an "action",
+   *  so it neither restarts the lock timer nor clears the spin flag. */
+  private moveActive(dir: Direction): void {
+    if (!this.activePiece) return
+    if (this.field.checkCollision(this.activePiece, dir)) return
+    this.activePiece.move(dir)
+    this.lastActionRotate = false
+    this.resetLock()
+    if (dir === 'down') this.onDescend()
+    else this.events.onMove?.(dir)
+  }
+
+  /**
+   * Rotate the active piece under SRS.
+   *
+   * The rotation itself is a turn about the piece's true centre (its square box
+   * guarantees that). If the turned piece doesn't fit, the five offsets for this
+   * exact from→to transition are tried in order and the first that fits wins;
+   * if none do, the rotation is refused outright rather than fudged.
+   *
+   * Those offsets are the "seek an opening and force it" behaviour: they lean
+   * the piece *into* the direction it is turning, which is how it climbs into a
+   * slot it could never be dropped into. Because the table is keyed by the pair
+   * of states, spinning clockwise into a right-hand slot gets its own offsets —
+   * a single shared list, however clever, is what makes a game that spins one
+   * way and not the other.
+   */
+  private tryRotate(dir: 'left' | 'right'): void {
+    if (!this.activePiece) return
+    const from = this.activePiece.orientation
+    const rotated = this.activePiece.clone()
+    rotated.rotate(dir)
+    const table = kicksFor(rotated.name)
+    const kicks = table?.[`${from}>${rotated.orientation}`] ?? [[0, 0] as const]
+
+    for (const [kx, ky] of kicks) {
+      const candidate = rotated.clone()
+      candidate.x += kx
+      candidate.y += ky
+      if (this.field.collides(candidate)) continue
+      this.activePiece = candidate
+      this.lastActionRotate = true
+      this.lastRotateKicked = kx !== 0 || ky !== 0
+      this.resetLock()
+      this.onDescend()
+      this.events.onRotate?.(this.lastRotateKicked)
+      return
     }
   }
 
   /**
-   * Rotate the active piece, trying the {@link WALL_KICKS} offsets in order and
-   * committing to the first that lands clear. A no-op if none fit. Tracks that
-   * the last action was a rotation so a subsequent immobile lock reads as a spin.
+   * Whether this lock counts as a spin. Two rules, either of which is enough:
+   *
+   * - *Immobile*: the piece can't shift a cell in any direction. The general
+   *   rule that catches L-, S-, J- and Z-spins as well as T's.
+   * - *Three corners*: for a T only — three of the four cells diagonally around
+   *   its centre are solid. The guideline T-spin rule, and it credits the
+   *   T-spins that the immobile test misses (a T-spin single often leaves the
+   *   piece free to slide one way).
+   *
+   * Either way the rotation must have been the last thing that happened: travel
+   * after a rotation means the piece fell into place rather than being spun in.
    */
-  private tryRotate(dir: 'left' | 'right'): void {
-    if (!this.activePiece) return
-    const rotated = this.activePiece.clone()
-    rotated.rotate(dir)
-    for (const [kx, ky] of WALL_KICKS) {
-      const candidate = rotated.clone()
-      candidate.x += kx
-      candidate.y += ky
-      if (!this.field.collides(candidate)) {
-        this.activePiece = candidate
-        this.lastActionRotate = true
-        this.events.onRotate?.(kx !== 0 || ky !== 0)
-        return
-      }
-    }
+  private isSpin(piece: Piece): boolean {
+    if (!this.lastActionRotate) return false
+    if (this.field.isImmobile(piece)) return true
+    if (piece.name !== 'T') return false
+    // The T's centre is the middle of its 3×3 box; the corners are its diagonals.
+    const cx = piece.x + 1
+    const cy = piece.y + 1
+    const corners = [
+      [cx - 1, cy - 1],
+      [cx + 1, cy - 1],
+      [cx - 1, cy + 1],
+      [cx + 1, cy + 1]
+    ]
+    return corners.filter(([x, y]) => this.field.isSolid(x, y)).length >= 3
   }
 
   public push(hard = false): void {
@@ -173,10 +300,9 @@ export default class Game {
       this.activePiece.move('down')
       dropped = true
     }
-    // A spin only stands if the piece never travelled after its last rotation
-    // and is wedged in place (immobile) at the moment it locks.
-    const spin =
-      this.lastActionRotate && !dropped && this.field.isImmobile(this.activePiece)
+    // Travelling after the rotation means the piece *fell* into its slot rather
+    // than being spun into it — so a hard drop across open space is never a spin.
+    const spin = !dropped && this.isSpin(this.activePiece)
     const cleared = this.field.placePiece(this.activePiece)
     this.events.onLock?.(hard)
     this.applyScore(cleared, spin)
@@ -184,7 +310,16 @@ export default class Game {
     if (cleared > 0) this.events.onClear?.(this.field.lastCleared, cleared, this.level)
     this.activePiece = undefined
     this.canHold = true
+    this.clearPieceState()
+  }
+
+  /** Per-piece bookkeeping — spin flags and the lock timer — back to zero. */
+  private clearPieceState(): void {
     this.lastActionRotate = false
+    this.lastRotateKicked = false
+    this.lockTimer = 0
+    this.lockResets = 0
+    this.lowestRow = -Infinity
   }
 
   private applyScore(lines: number, spin = false): void {

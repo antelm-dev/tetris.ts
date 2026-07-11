@@ -28,22 +28,23 @@ import type { HighScores, Host } from './host'
  */
 type Scene = 'menu' | 'play'
 
-const GAME = new Game({ width: COLS, height: ROWS })
-
 const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
+  // Every piece of state the sketch owns is built here, so a second canvas gets
+  // its own engine rather than sharing one through the module.
+  const game = new Game({ width: COLS, height: ROWS })
   const fx = new Effects()
   const bg = new Background()
   const ui = new Ui()
   const flashes = new Flashes()
   const gravity = new Gravity()
   const motion = new PieceMotion()
-  const input = new Input(GAME)
+  const input = new Input(game)
 
   let scene: Scene = 'menu'
 
   const startSolo = (): void => {
     scene = 'play'
-    GAME.start()
+    game.start()
     input.attach()
   }
 
@@ -56,7 +57,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
 
   const menu = new Menu({ onSolo: startSolo, onQuit: host?.quit })
 
-  wireEvents(GAME, { fx, ui, flashes, motion, gravity, scores })
+  wireEvents(game, { fx, ui, flashes, motion, gravity, scores })
 
   return new P5((p: P5) => {
     p.windowResized = (): void => {
@@ -92,7 +93,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
       }
       // Back to the menu from a paused or finished game — the only two moments
       // where dropping the run can't cost the player anything.
-      if ((p.key === 'm' || p.key === 'M') && (GAME.isPaused || GAME.gameOver)) openMenu()
+      if ((p.key === 'm' || p.key === 'M') && (game.isPaused || game.gameOver)) openMenu()
     }
 
     p.mouseMoved = (): void => menu.pointer(p.mouseX, p.mouseY)
@@ -105,15 +106,20 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
       //    frozen while the menu is up, so the board is a live still life.
       const playing = scene === 'play'
       if (playing) input.update(dt)
-      if (playing && !GAME.isPaused && !GAME.gameOver) gravity.update(dt, GAME)
+      if (playing && !game.isPaused && !game.gameOver) {
+        gravity.update(dt, game)
+        // Gravity only ever *falls*; the lock clock is what finally commits a
+        // grounded piece, and it runs on frames so the grace period is real time.
+        game.tick(dt)
+      }
 
       // 2. Advance every animation clock.
-      motion.update(dt, GAME)
+      motion.update(dt, game)
       flashes.update(dt)
       fx.update(dt)
       ui.update(dt)
       menu.update(dt)
-      bg.setLevel(GAME.level)
+      bg.setLevel(game.level)
       bg.update(dt)
 
       // 3. Render.
@@ -131,16 +137,16 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
 
       inWorld(p, fx, angle, () => {
         drawWell(p)
-        drawLockedField(p, GAME.field)
-        drawGhost(p, GAME, motion.x)
-        drawActive(p, GAME, motion.x, motion.y, motion.pop)
+        drawLockedField(p, game.field)
+        drawGhost(p, game, motion.x)
+        drawActive(p, game, motion.x, motion.y, motion.pop)
         flashes.draw(p)
 
         // Side panels: hold (left) and the next queue (right, top-down).
         const px = (COLS / 2 + 3) * CELL
         const top = -(ROWS / 2 - 2) * CELL
-        drawPanel(p, GAME.holdPiece, -px, top)
-        GAME.nextPieces
+        drawPanel(p, game.holdPiece, -px, top)
+        game.nextPieces
           .slice(-3)
           .reverse()
           .forEach((piece, i) => drawPanel(p, piece, px, top + i * CELL * 3.4))

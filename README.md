@@ -1,5 +1,9 @@
 # tetris.ts
 
+<p align="center">
+  <img src="docs/demo.gif" alt="tetris.ts — the menu, then a game in progress" width="340">
+</p>
+
 A 3D Tetris (p5.js / WebGL) running on Electron. It merges two things:
 
 - the **build & boot architecture** of the `coll-front/apps/desktop` app — Rollup

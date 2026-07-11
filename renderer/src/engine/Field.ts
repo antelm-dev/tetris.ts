@@ -1,4 +1,4 @@
-import type { Direction, Rotate, Slot } from './types'
+import type { Direction, Slot } from './types'
 import type Piece from './Piece'
 
 export default class Field {
@@ -26,11 +26,19 @@ export default class Field {
     this._slots.unshift(new Array<Slot>(this._slots[0].length).fill(0))
   }
 
-  private getNextMove(action: Direction | Rotate) {
-    return {
-      x: action === 'left' ? -1 : action === 'right' ? 1 : 0,
-      y: action === 'down' ? 1 : 0
-    }
+  private getNextMove(action: Direction) {
+    const x = action === 'left' ? -1 : Number(action === 'right')
+    return { x, y: Number(action === 'down') }
+  }
+
+  /**
+   * True if the cell is filled *or* outside the well — walls and the floor
+   * count as solid. This is the primitive the T-spin corner rule reads.
+   */
+  public isSolid(x: number, y: number): boolean {
+    if (x < 0 || x >= this._slots[0].length || y >= this._slots.length) return true
+    if (y < 0) return false // open sky above the well
+    return !!this._slots[y][x]
   }
 
   public overlaps(piece: Piece): boolean {
@@ -86,27 +94,14 @@ export default class Field {
     })
   }
 
-  public checkCollision(piece: Piece, action: Direction | Rotate): boolean {
-    const localPiece = piece.clone()
+  /** True if `piece` cannot take one step in `action`. Rotation is not a step —
+   *  it kicks, so it goes through {@link collides} on each candidate instead. */
+  public checkCollision(piece: Piece, action: Direction): boolean {
     const move = this.getNextMove(action)
-
-    if (action.startsWith('rotate')) {
-      localPiece.rotate(action.split('-')[1] as 'left' | 'right')
-    }
-
-    return localPiece.shape.some((row, dy) =>
-      row.some((cell, dx) => {
-        if (!cell) return false
-        const newY = localPiece.y + dy + move.y
-        const newX = localPiece.x + dx + move.x
-        return (
-          newX <= -1 ||
-          newX >= this._slots[0].length ||
-          newY >= this._slots.length ||
-          (newY >= 0 && !!this._slots[newY][newX])
-        )
-      })
-    )
+    const probe = piece.clone()
+    probe.x += move.x
+    probe.y += move.y
+    return this.collides(probe)
   }
 
   public placePiece(piece: Piece): number {

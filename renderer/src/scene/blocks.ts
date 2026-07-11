@@ -166,15 +166,22 @@ export function drawPanel(
   p.pop()
   if (!piece) return
   const pal = PALETTE[piece.name]
-  const rows = piece.shape.length
-  const cols = piece.shape[0].length
   const s = 0.62
+  // Centre on the piece's *filled* cells, not on its bounding box: the box is
+  // square and padded (an I is four cells in a 4×4), so centring on it would
+  // hang every preview off to one side of its frame.
+  const filled: [number, number][] = []
   piece.shape.forEach((r, i) =>
     r.forEach((c, j) => {
-      if (!c) return
-      const x = centerX + (j - (cols - 1) / 2) * CELL * s
-      const y = centerY + (i - (rows - 1) / 2) * CELL * s
-      drawBlock(p, x, y, pal.body, pal.face, { sc: s })
+      if (c) filled.push([j, i])
     })
   )
+  const mid = (v: number[]) => (Math.min(...v) + Math.max(...v)) / 2
+  const midX = mid(filled.map(([j]) => j))
+  const midY = mid(filled.map(([, i]) => i))
+  for (const [j, i] of filled) {
+    const x = centerX + (j - midX) * CELL * s
+    const y = centerY + (i - midY) * CELL * s
+    drawBlock(p, x, y, pal.body, pal.face, { sc: s })
+  }
 }

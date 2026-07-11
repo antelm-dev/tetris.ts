@@ -1,6 +1,6 @@
 import { BrowserWindow, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { extname, isAbsolute, relative, resolve } from 'node:path'
 import { createIpcContainer } from 'electron-ipc-module'
 import { prepare } from './core/bootstrap.js'
 import { createCustomScheme } from './core/electron.js'
@@ -29,11 +29,32 @@ const MIME_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2'
 }
 
-/** Serve the built renderer (`dist-renderer`) over the `app://` scheme. */
+const CLIENT_DIR = resolve(env.paths.clientDir)
+
+/**
+ * Serve the built renderer (`dist-renderer`) over the `app://` scheme.
+ *
+ * The requested path is untrusted: anything the page loads — including a URL a
+ * compromised renderer builds itself — arrives here. So it is resolved against
+ * the bundle directory and any result that lands outside it (`../../`, an
+ * absolute path, an encoded separator) is refused rather than read off disk.
+ */
 async function serveClient(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url)
-  const relative = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.replace(/^\/+/, ''))
-  const file = join(env.paths.clientDir, relative)
+
+  let requested: string
+  try {
+    requested = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.replace(/^\/+/, ''))
+  } catch {
+    // Malformed percent-encoding.
+    return new Response('Bad request', { status: 400 })
+  }
+
+  const file = resolve(CLIENT_DIR, requested)
+  const rel = relative(CLIENT_DIR, file)
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+    return new Response('Forbidden', { status: 403 })
+  }
 
   try {
     const data = await readFile(file)
@@ -58,8 +79,10 @@ function createWindow(): BrowserWindow {
     // fullscreen through the `window` IPC module.
     frame: false,
     webPreferences: {
+      // The preload only touches `electron` (contextBridge + ipcRenderer), which
+      // the sandbox still provides — so the renderer runs with no Node at all.
       preload: env.paths.preload,
-      sandbox: false
+      sandbox: true
     }
   })
 

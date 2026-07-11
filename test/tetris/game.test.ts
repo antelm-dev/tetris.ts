@@ -1,8 +1,60 @@
 import { describe, it, expect } from 'vitest'
 import Game from '../../renderer/src/engine/Game'
 import Piece from '../../renderer/src/engine/Piece'
+import { PIECES_SHAPES, type PieceName } from '../../renderer/src/engine/const'
+import type { Action } from '../../renderer/src/engine/types'
 
 const newGame = () => new Game({ width: 6, height: 10 })
+
+/** Paint one row of the well from ASCII art: '#' filled, anything else empty. */
+const fillRow = (game: Game, y: number, art: string): void => {
+  ;[...art].forEach((c, x) => {
+    game.field.slots[y][x] = c === '#' ? 'L' : 0
+  })
+}
+
+/** A jagged 10-wide stack with a few overhangs, deterministic in `seed`. */
+const randomStack = (seed: number): string[] => {
+  let s = seed
+  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+  const heights = Array.from({ length: 10 }, () => 2 + Math.floor(rnd() * 5))
+  const rows = Array.from({ length: 20 }, () => Array<string>(10).fill('.'))
+  for (let x = 0; x < 10; x++)
+    for (let y = 20 - heights[x]; y < 20; y++) if (rnd() > 0.12) rows[y][x] = '#'
+  return rows.map((r) => r.join(''))
+}
+
+/**
+ * Every spin a player could score on this board with a single rotate press:
+ * exhaustively try each position and pre-rotation, turn once, and lock.
+ */
+const countSpins = (board: string[], name: PieceName, dir: Action) => {
+  let count = 0
+  let best = 0
+  for (let pre = 0; pre < 4; pre++) {
+    for (let x = -3; x < 11; x++) {
+      for (let y = -2; y < 20; y++) {
+        const game = new Game({ width: 10, height: 20 })
+        board.forEach((row, i) => fillRow(game, i, row))
+        const piece = new Piece(name, PIECES_SHAPES[name])
+        for (let i = 0; i < pre; i++) piece.rotate('right')
+        piece.x = x
+        piece.y = y
+        if (game.field.collides(piece)) continue
+        game.activePiece = piece
+        let lines = -1
+        game.events.onSpin = (_n, c) => (lines = c)
+        game.action(dir)
+        game.push(true)
+        if (lines >= 0) {
+          count++
+          best = Math.max(best, lines)
+        }
+      }
+    }
+  }
+  return { count, best }
+}
 
 describe('Game', () => {
   it('initializes empty with a 4-piece queue', () => {
@@ -100,99 +152,156 @@ describe('Game', () => {
 
   it('wall-kicks a rotation that would otherwise collide with the floor', () => {
     const game = newGame()
-    const piece = new Piece('T', [
-      [1, 1, 1],
-      [0, 1, 0]
-    ])
+    const piece = new Piece('T', PIECES_SHAPES.T)
     piece.x = 2
-    piece.y = 8 // flat on the floor: a naive rotate would poke through it
+    piece.y = 8 // flat on the floor: the turned T would poke through it
     game.activePiece = piece
     game.action('rotate-right')
-    // Rotated to the vertical T and kicked one row up to stay on the board.
-    expect(game.activePiece?.shape).toEqual([
-      [0, 1],
-      [1, 1],
-      [0, 1]
-    ])
-    expect(game.activePiece?.y).toBe(7)
-    expect(game.activePiece?.x).toBe(2)
+    // Turned upright, and kicked up-and-left by the 0>1 offsets to fit.
+    expect(game.activePiece?.orientation).toBe(1)
+    expect([game.activePiece?.x, game.activePiece?.y]).toEqual([1, 7])
+    expect(game.activePiece?.bottom).toBe(9) // still standing on the floor
+  })
+
+  // Regression: with the old non-square boxes an I lying on the floor needed a
+  // 3-row lift to stand up, which no kick offered — so it simply could not be
+  // rotated at all.
+  it('stands an I piece up off the floor', () => {
+    const game = new Game({ width: 10, height: 20 })
+    const piece = new Piece('I', PIECES_SHAPES.I)
+    piece.x = 3
+    piece.y = 18 // the I's cells sit on row 19, the floor
+    game.activePiece = piece
+    expect(piece.bottom).toBe(19)
+
+    game.action('rotate-right')
+
+    expect(game.activePiece?.orientation).toBe(1)
+    // Vertical, still standing on the floor rather than poking through it.
+    expect(game.activePiece?.bottom).toBe(19)
+    expect(game.activePiece?.cells()).toHaveLength(4)
   })
 
   it('detects a T-spin: rotating into a wedged slot scores a spin and fires onSpin', () => {
-    const game = newGame()
-    // Build a 1-wide T-slot at the bottom, fully enclosed so the landed T
-    // cannot shift in any direction (the generalized "immobile" spin rule).
-    game.field.slots[6][1] = 'O' // overhang above the flat (blocks up)
-    game.field.slots[7][0] = 'O' // wall left of the flat (blocks left)
-    game.field.slots[7][4] = 'O' // wall right of the flat (blocks right)
-    game.field.slots[9][2] = 'O' // floor under the nub (blocks down)
+    const game = new Game({ width: 10, height: 20 })
+    // The T-slot below, but with the far right column left open so the rows
+    // don't complete: a spin that clears nothing still earns its bonus.
+    fillRow(game, 17, '###..#....')
+    fillRow(game, 18, '###...###.')
+    fillRow(game, 19, '####.####.')
 
-    // T pointing right; a clockwise rotation turns it into the spawn shape that
-    // drops into the slot at (x=1, y=7) without needing a kick.
-    const piece = new Piece('T', [
-      [1, 0],
-      [1, 1],
-      [1, 0]
-    ])
-    piece.x = 1
-    piece.y = 7
+    // The T comes in upright beside the cave and turns into it.
+    const piece = new Piece('T', PIECES_SHAPES.T)
+    piece.rotate('right')
+    piece.x = 2
+    piece.y = 16
     game.activePiece = piece
 
     let spun: { name: string; lines: number } | undefined
     game.events.onSpin = (name, lines) => (spun = { name, lines })
 
-    game.action('rotate-right')
-    expect(game.activePiece?.shape).toEqual([
-      [1, 1, 1],
-      [0, 1, 0]
-    ])
-    game.push() // lock it in place
+    game.action('rotate-right') // kicks down into the slot
+    game.push()
 
     expect(spun).toEqual({ name: 'T', lines: 0 })
     expect(game.score).toBe(100) // spin-without-clear bonus
   })
 
-  it('scores a T-spin single higher than a normal single', () => {
-    const game = newGame()
-    // Same enclosed slot, but the flat row is one line away from complete so
-    // locking the T clears it — a T-spin single (800) beats a plain single (100).
-    game.field.slots[6][1] = 'O'
-    game.field.slots[7][0] = 'O'
-    game.field.slots[7][4] = 'O'
-    game.field.slots[7][5] = 'O' // fill the last column so row 7 completes
-    game.field.slots[9][2] = 'O'
+  /**
+   * The bug this rotation system exists to fix. A T-spin double and its exact
+   * mirror image must both work — the first turning clockwise into the slot,
+   * the second turning counter-clockwise into the mirrored one. Under the old
+   * shared kick list the right-hand version silently failed.
+   */
+  describe('a T-spin double works from both sides', () => {
+    const SLOT = ['###..#....', '###...####', '####.#####']
+    const mirrored = SLOT.map((r) => [...r].reverse().join(''))
 
-    const piece = new Piece('T', [
-      [1, 0],
-      [1, 1],
-      [1, 0]
-    ])
-    piece.x = 1
-    piece.y = 7
-    game.activePiece = piece
+    const build = (rows: string[]) => {
+      const game = new Game({ width: 10, height: 20 })
+      rows.forEach((row, i) => fillRow(game, 17 + i, row))
+      return game
+    }
 
-    game.action('rotate-right')
-    game.push()
+    // The T arrives vertical beside the cave and turns into it.
+    const spin = (game: Game, orientation: 1 | 3, x: number, dir: Action) => {
+      const piece = new Piece('T', PIECES_SHAPES.T)
+      for (let i = 0; i < orientation; i++) piece.rotate('right')
+      piece.x = x
+      piece.y = 16
+      game.activePiece = piece
+      let lines = -1
+      game.events.onSpin = (_n, count) => (lines = count)
+      game.action(dir)
+      game.push()
+      return lines
+    }
 
-    expect(game.score).toBe(800)
-    expect(game.lines).toBe(1)
+    it('clockwise, into a slot open on its left', () => {
+      const game = build(SLOT)
+      expect(spin(game, 1, 2, 'rotate-right')).toBe(2)
+      expect(game.score).toBe(1200) // T-spin double
+    })
+
+    it('counter-clockwise, into the mirrored slot', () => {
+      const game = build(mirrored)
+      expect(spin(game, 3, 5, 'rotate-left')).toBe(2)
+      expect(game.score).toBe(1200) // the same score, the other way round
+    })
+  })
+
+  /**
+   * The general form of the same property: the engine must be blind to which
+   * hand you are. Mirror the board, mirror the rotation direction, and mirror
+   * the piece — an L reflects into a J, an S into a Z — and every spin that was
+   * available must still be available.
+   *
+   * I is excluded on purpose: SRS's published I kicks list the same five offsets
+   * for a rotation and its reflection but in a *different order*, so the two can
+   * settle on different (equally legal) cells. That asymmetry is in the standard
+   * itself, not in this port, and it is not the one players feel.
+   */
+  it('is mirror-symmetric across random stacks', () => {
+    const reflect: Partial<Record<PieceName, PieceName>> = {
+      T: 'T',
+      L: 'J',
+      J: 'L',
+      S: 'Z',
+      Z: 'S'
+    }
+    const asymmetric: string[] = []
+
+    for (let seed = 1; seed <= 15; seed++) {
+      const board = randomStack(seed)
+      const flipped = board.map((r) => [...r].reverse().join(''))
+      for (const [name, twin] of Object.entries(reflect) as [PieceName, PieceName][]) {
+        const cw = countSpins(board, name, 'rotate-right')
+        const ccw = countSpins(flipped, twin, 'rotate-left')
+        if (cw.count !== ccw.count || cw.best !== ccw.best) {
+          asymmetric.push(
+            `seed ${seed} ${name}: ${cw.count}/${cw.best} vs ${twin} ${ccw.count}/${ccw.best}`
+          )
+        }
+      }
+    }
+
+    expect(asymmetric).toEqual([])
   })
 
   it('does not count a spin when the last action was a move, not a rotation', () => {
-    const game = newGame()
-    game.field.slots[6][1] = 'O'
-    game.field.slots[7][0] = 'O'
-    game.field.slots[7][4] = 'O'
-    game.field.slots[9][2] = 'O'
+    const game = new Game({ width: 10, height: 20 })
+    fillRow(game, 17, '###..#....')
+    fillRow(game, 18, '###...####')
+    fillRow(game, 19, '####.#####')
 
-    // Already in the spawn shape and slot, but we nudge (a no-op against the
-    // right wall) so the last action is a move -> the lock must not be a spin.
-    const piece = new Piece('T', [
-      [1, 1, 1],
-      [0, 1, 0]
-    ])
-    piece.x = 1
-    piece.y = 7
+    // Dropped into the very slot the T-spin double aims for — but never rotated
+    // into it. It clears the same two rows, and must score them as a plain
+    // double (300), not a T-spin double (1200).
+    const piece = new Piece('T', PIECES_SHAPES.T)
+    piece.rotate('right')
+    piece.rotate('right') // nub down, the slot's shape
+    piece.x = 3
+    piece.y = 17
     game.activePiece = piece
 
     let spun = false
@@ -202,7 +311,67 @@ describe('Game', () => {
     game.push()
 
     expect(spun).toBe(false)
-    expect(game.score).toBe(0)
+    expect(game.lines).toBe(2)
+    expect(game.score).toBe(300)
+  })
+
+  describe('lock delay', () => {
+    /** A T resting on the floor of an otherwise empty 10×20 well. */
+    const grounded = () => {
+      const game = new Game({ width: 10, height: 20 })
+      const piece = new Piece('T', PIECES_SHAPES.T)
+      piece.x = 3
+      piece.y = 18
+      game.activePiece = piece
+      return game
+    }
+
+    it('gives a grounded piece a grace period instead of locking on contact', () => {
+      const game = grounded()
+      game.update() // the gravity tick that finds the floor
+      expect(game.activePiece).toBeDefined() // still the player's to move
+
+      game.tick(0.3) // 300 ms — inside the 500 ms window
+      expect(game.activePiece).toBeDefined()
+
+      game.tick(0.3) // past it now
+      expect(game.activePiece).toBeUndefined()
+      expect(game.field.slots[19][4]).toBe('T')
+    })
+
+    it('a move or rotation restarts the countdown', () => {
+      const game = grounded()
+      game.tick(0.4)
+      game.action('left') // last-second slide
+      game.tick(0.4) // would have locked without the reset
+      expect(game.activePiece).toBeDefined()
+      game.action('rotate-right')
+      game.tick(0.4)
+      expect(game.activePiece).toBeDefined()
+      game.tick(0.2)
+      expect(game.activePiece).toBeUndefined()
+    })
+
+    it('caps the resets so a piece cannot be stalled forever', () => {
+      const game = grounded()
+      // Far more resets than the budget allows, each just short of locking.
+      for (let i = 0; i < 40 && game.activePiece; i++) {
+        game.tick(0.4)
+        game.action(i % 2 === 0 ? 'left' : 'right')
+      }
+      expect(game.activePiece).toBeUndefined()
+    })
+
+    it('falling to a new row refills the reset budget', () => {
+      const game = new Game({ width: 10, height: 20 })
+      const piece = new Piece('T', PIECES_SHAPES.T)
+      piece.x = 3
+      piece.y = 0
+      game.activePiece = piece
+      for (let i = 0; i < 20; i++) game.action('left') // burn resets in mid-air
+      game.action('push')
+      expect(game.activePiece).toBeUndefined() // hard drop still locks at once
+    })
   })
 
   // Fill the bottom `rows` completely except the last column, then hard-drop a

@@ -14,11 +14,7 @@ describe('windowIpc', () => {
   it('registers prefixed listeners (fire-and-forget)', async () => {
     const { ipc, listeners, handlers } = createFakeIpc()
     await windowIpc(ipc)
-    expect([...listeners.keys()]).toEqual([
-      'window:minimize',
-      'window:close',
-      'window:toggle-fullscreen'
-    ])
+    expect([...listeners.keys()]).toEqual(['window:minimize', 'window:close', 'window:toggle-fullscreen'])
     expect(handlers.size).toBe(0)
   })
 

@@ -16,9 +16,7 @@ export default class Field {
   }
 
   constructor(options: { width: number; height: number }) {
-    this._slots = Array.from({ length: options.height }, () =>
-      new Array<Slot>(options.width).fill(0)
-    )
+    this._slots = Array.from({ length: options.height }, () => new Array<Slot>(options.width).fill(0))
   }
 
   public clearRow(index: number): void {
@@ -63,12 +61,7 @@ export default class Field {
         if (!cell) return false
         const x = piece.x + dx
         const y = piece.y + dy
-        return (
-          x < 0 ||
-          x >= this._slots[0].length ||
-          y >= this._slots.length ||
-          (y >= 0 && !!this._slots[y][x])
-        )
+        return x < 0 || x >= this._slots[0].length || y >= this._slots.length || (y >= 0 && !!this._slots[y][x])
       })
     )
   }
@@ -118,9 +111,7 @@ export default class Field {
     // Clear top-to-bottom (ascending): clearRow unshifts a new row at the top,
     // which shifts every row *above* the cleared one down by one. Clearing a
     // smaller index leaves larger indices valid, so multi-line clears work.
-    const fullRows = [...indexes]
-      .filter((i) => this._slots[i].every((v) => v))
-      .sort((a, b) => a - b)
+    const fullRows = [...indexes].filter((i) => this._slots[i].every((v) => v)).sort((a, b) => a - b)
     this.lastCleared = fullRows
     for (const i of fullRows) this.clearRow(i)
     return fullRows.length

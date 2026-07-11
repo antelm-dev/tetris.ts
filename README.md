@@ -126,6 +126,15 @@ yarn build      # typecheck + vite build + rollup build
 yarn start      # electron . (loads app://)
 ```
 
+Lint and format (oxlint / oxfmt — configured in `.oxlintrc.json` and `.oxfmtrc.json`):
+
+```bash
+yarn lint           # oxlint
+yarn lint:fix       # oxlint --fix
+yarn format         # oxfmt, writes in place
+yarn format:check   # oxfmt --check (what CI runs)
+```
+
 Other scripts: `yarn clean`, `yarn gen:ipc`, `yarn typecheck`, `yarn build:renderer`, `yarn build:main`.
 
 > `electron-run` and `electron-ipc-module` are installed straight from GitHub

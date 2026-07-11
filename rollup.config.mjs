@@ -17,10 +17,7 @@ const replaceValues = {
   preventAssignment: true,
   'process.env.NODE_ENV': JSON.stringify(IS_PRODUCTION ? 'production' : 'development'),
   ...Object.fromEntries(
-    Object.entries(ENVIRONMENT).map(([key, value]) => [
-      `process.env.${key}`,
-      JSON.stringify(value)
-    ])
+    Object.entries(ENVIRONMENT).map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)])
   )
 }
 

@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise"],
+  "categories": { "correctness": "error", "suspicious": "error", "perf": "warn" },
+  "env": { "builtin": true, "es2022": true },
+  "rules": {
+    "typescript/consistent-type-imports": "warn",
+    "typescript/no-explicit-any": "warn",
+    "unicorn/prefer-node-protocol": "error",
+
+    "eslint/no-shadow": "off",
+    "eslint/no-underscore-dangle": "off",
+    "promise/always-return": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-new-array": "off",
+    "unicorn/require-module-specifiers": "off"
+  },
+  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "release", ".yarn"],
+  "overrides": [
+    { "files": ["main/**/*.ts", "scripts/**/*.mjs", "*.config.*", "test/**/*.ts"], "env": { "node": true } },
+    { "files": ["renderer/**/*.ts"], "env": { "browser": true } },
+    { "files": ["**/*.d.ts"], "rules": { "typescript/consistent-type-imports": "off" } },
+    {
+      "files": ["test/**/*.ts"],
+      "plugins": ["vitest"],
+      "env": { "vitest": true },
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "vitest/valid-expect": "off"
+      }
+    }
+  ]
+}

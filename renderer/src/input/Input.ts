@@ -15,13 +15,7 @@ const ACTIONS: Record<Bind, Action> = {
 }
 
 /** Bindings that fire once per press; the rest auto-repeat while held. */
-const TAPS: ReadonlySet<Bind> = new Set<Bind>([
-  'hardDrop',
-  'rotateRight',
-  'rotateLeft',
-  'hold',
-  'pause'
-])
+const TAPS: ReadonlySet<Bind> = new Set<Bind>(['hardDrop', 'rotateRight', 'rotateLeft', 'hold', 'pause'])
 
 const DAS = 150 // ms before horizontal auto-shift kicks in
 const ARR = 38 // ms between auto-shifted steps

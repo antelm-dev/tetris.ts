@@ -80,9 +80,7 @@ describe('Piece', () => {
           const dx = x - px
           const dy = y - py
           const [rx, ry] = dir === 'right' ? [-dy, dx] : [dy, -dx]
-          expect(after, `${name} ${dir} (${x},${y})`).toContain(
-            `${px + rx},${py + ry}`
-          )
+          expect(after, `${name} ${dir} (${x},${y})`).toContain(`${px + rx},${py + ry}`)
         }
       }
     }

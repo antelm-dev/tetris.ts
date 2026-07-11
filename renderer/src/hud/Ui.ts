@@ -1,22 +1,10 @@
-import P5 from 'p5'
+import type P5 from 'p5'
 import { mix } from '../core/color'
 import { hump, smooth } from '../core/ease'
 import { BIND_LABELS, BINDS, keyLabel } from '../config/keymap'
 import { settings } from '../config/settings'
 import { UI } from '../config/themes'
-import {
-  BAR,
-  composite,
-  ensureBuffer,
-  FG,
-  keycap,
-  keycapWidth,
-  MONO,
-  PANEL,
-  panel,
-  RED,
-  setTracking
-} from './widgets'
+import { BAR, composite, ensureBuffer, FG, keycap, keycapWidth, MONO, PANEL, panel, RED, setTracking } from './widgets'
 
 /**
  * The game's chrome — score HUD, controls legend, pause/game-over overlay and

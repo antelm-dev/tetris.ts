@@ -21,13 +21,7 @@ export type PrepareOptions = {
  * cleanly on quit. Extracted from the desktop app's core, minus React Router.
  */
 export function prepare(options: PrepareOptions = {}) {
-  const {
-    url,
-    protocols = [],
-    createWindow = () => new BrowserWindow(),
-    onBeforeQuit,
-    onReady
-  } = options
+  const { url, protocols = [], createWindow = () => new BrowserWindow(), onBeforeQuit, onReady } = options
 
   protocol.registerSchemesAsPrivileged(protocols.map(({ scheme }) => scheme.scheme))
 
@@ -60,9 +54,6 @@ export function prepare(options: PrepareOptions = {}) {
 }
 
 function handleError(error: unknown) {
-  dialog.showErrorBox(
-    'Une erreur est survenue',
-    error instanceof Error ? error.message : String(error)
-  )
+  dialog.showErrorBox('Une erreur est survenue', error instanceof Error ? error.message : String(error))
   process.crash()
 }

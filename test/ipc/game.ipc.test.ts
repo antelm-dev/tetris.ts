@@ -24,8 +24,7 @@ const load = async () => {
   return {
     sender,
     getHighScore: () => handlers.get('game:get-high-score')!(event) as Promise<number>,
-    submitScore: (score: number) =>
-      handlers.get('game:submit-score')!(event, score) as Promise<boolean>
+    submitScore: (score: number) => handlers.get('game:submit-score')!(event, score) as Promise<boolean>
   }
 }
 

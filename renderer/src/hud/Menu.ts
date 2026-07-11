@@ -5,16 +5,7 @@ import { BIND_LABELS, BINDS, isBindable, keyLabel, type Bind } from '../config/k
 import { settings } from '../config/settings'
 import { PALETTE, THEMES, UI } from '../config/themes'
 import type { PieceName } from '../engine'
-import {
-  composite,
-  ensureBuffer,
-  FG,
-  keycap,
-  keycapWidth,
-  MONO,
-  panel,
-  setTracking
-} from './widgets'
+import { composite, ensureBuffer, FG, keycap, keycapWidth, MONO, panel, setTracking } from './widgets'
 
 /**
  * The front-end menu, drawn with p5 into the same kind of off-screen 2D buffer
@@ -150,9 +141,7 @@ export class Menu {
   private move(step: number): void {
     const rows = this.rows()
     const n = rows.length
-    const next = rows
-      .map((_, i) => (((this.index + step * (i + 1)) % n) + n) % n)
-      .find((i) => !rows[i].disabled)
+    const next = rows.map((_, i) => (((this.index + step * (i + 1)) % n) + n) % n).find((i) => !rows[i].disabled)
     if (next !== undefined) this.index = next
   }
 
@@ -346,8 +335,7 @@ export class Menu {
     const accent = UI.accent
     const dc = g.drawingContext as CanvasRenderingContext2D
     const title = this.screen === 'main' ? 'TETRIS.TS' : 'SETTINGS'
-    const sub =
-      this.screen === 'main' ? 'A 3D take on the classic' : 'Theme and controls, saved automatically'
+    const sub = this.screen === 'main' ? 'A 3D take on the classic' : 'Theme and controls, saved automatically'
 
     g.push()
     g.noStroke()
@@ -489,14 +477,7 @@ export class Menu {
     g.pop()
   }
 
-  private drawBindValue(
-    g: P5.Graphics,
-    bind: Bind,
-    right: number,
-    y: number,
-    a: number,
-    capturing: boolean
-  ): void {
+  private drawBindValue(g: P5.Graphics, bind: Bind, right: number, y: number, a: number, capturing: boolean): void {
     const cy = y + ROW_H / 2
     if (capturing) {
       const blink = 0.55 + 0.45 * Math.sin(this.clock * 8)

@@ -20,14 +20,7 @@ interface BlockOptions {
   z?: number
 }
 
-export function drawBlock(
-  p: P5,
-  x: number,
-  y: number,
-  body: RGB,
-  face: RGB,
-  opts: BlockOptions = {}
-): void {
+export function drawBlock(p: P5, x: number, y: number, body: RGB, face: RGB, opts: BlockOptions = {}): void {
   const { alpha = 255, sc = 1, z = 0 } = opts
   const s = CELL * 0.92 * sc
   p.push()
@@ -133,13 +126,7 @@ export function drawGhost(p: P5, game: Game, visualX: number): void {
  * one — `visualX`/`visualY` chase the engine's integer cell, and `pop` is the
  * spawn/rotate scale bump (see `app/loop.ts`).
  */
-export function drawActive(
-  p: P5,
-  game: Game,
-  visualX: number,
-  visualY: number,
-  pop: number
-): void {
+export function drawActive(p: P5, game: Game, visualX: number, visualY: number, pop: number): void {
   const ap = game.activePiece
   if (!ap) return
   const pal = PALETTE[ap.name]
@@ -150,12 +137,7 @@ export function drawActive(
 }
 
 /** A hold / next-queue preview panel: a framed square with a piece in it. */
-export function drawPanel(
-  p: P5,
-  piece: Piece | undefined,
-  centerX: number,
-  centerY: number
-): void {
+export function drawPanel(p: P5, piece: Piece | undefined, centerX: number, centerY: number): void {
   // Frame.
   p.push()
   p.translate(centerX, centerY, -CELL * 0.3)

@@ -32,14 +32,7 @@ export interface PanelStyle {
 }
 
 /** Rounded panel with a translucent fill and a hairline inner border. */
-export function panel(
-  g: P5.Graphics,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  style: PanelStyle
-): void {
+export function panel(g: P5.Graphics, x: number, y: number, w: number, h: number, style: PanelStyle): void {
   const { r, fill, fillA, strokeA } = style
   g.push()
   g.noStroke()
@@ -53,15 +46,7 @@ export function panel(
 }
 
 /** A single keycap, matching the old `<kbd>` styling. */
-export function keycap(
-  g: P5.Graphics,
-  label: string,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  alpha = 1
-): void {
+export function keycap(g: P5.Graphics, label: string, x: number, y: number, w: number, h: number, alpha = 1): void {
   g.push()
   g.noStroke()
   g.fill(120, 140, 200, 36 * alpha)
@@ -105,12 +90,7 @@ export function composite(p: P5, g: P5.Graphics): void {
 }
 
 /** Create/resize a buffer to match the canvas. */
-export function ensureBuffer(
-  p: P5,
-  current: P5.Graphics | undefined,
-  w: number,
-  h: number
-): P5.Graphics {
+export function ensureBuffer(p: P5, current: P5.Graphics | undefined, w: number, h: number): P5.Graphics {
   if (!current) return p.createGraphics(w, h)
   if (current.width !== w || current.height !== h) current.resizeCanvas(w, h)
   return current

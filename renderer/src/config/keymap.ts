@@ -7,16 +7,7 @@
  */
 
 /** Every rebindable action. Order is the order shown in the settings screen. */
-export const BINDS = [
-  'left',
-  'right',
-  'softDrop',
-  'hardDrop',
-  'rotateRight',
-  'rotateLeft',
-  'hold',
-  'pause'
-] as const
+export const BINDS = ['left', 'right', 'softDrop', 'hardDrop', 'rotateRight', 'rotateLeft', 'hold', 'pause'] as const
 
 export type Bind = (typeof BINDS)[number]
 

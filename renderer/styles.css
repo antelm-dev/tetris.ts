@@ -19,10 +19,8 @@ body {
   overflow: hidden;
   color: var(--fg);
   /* Deep radial ambiance behind the transparent-edged WebGL canvas. */
-  background:
-    radial-gradient(120% 90% at 50% 8%, #1a2140 0%, #0a0d18 55%, #05060c 100%);
-  font-family:
-    ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+  background: radial-gradient(120% 90% at 50% 8%, #1a2140 0%, #0a0d18 55%, #05060c 100%);
+  font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
   user-select: none;
 }
 

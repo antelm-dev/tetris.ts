@@ -151,9 +151,7 @@ export const DEFAULT_THEME = THEMES[0]
  * and {@link applyTheme} rewrites them *in place* — so swapping themes at
  * runtime needs no re-import, re-wiring or restart of the sketch.
  */
-export const PALETTE: Record<PieceName, Shade> = structuredClone(
-  DEFAULT_THEME.pieces
-) as Record<PieceName, Shade>
+export const PALETTE: Record<PieceName, Shade> = structuredClone(DEFAULT_THEME.pieces) as Record<PieceName, Shade>
 
 export const INK: Ink = structuredClone(DEFAULT_THEME.ink) as Ink
 

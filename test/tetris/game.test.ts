@@ -16,11 +16,10 @@ const fillRow = (game: Game, y: number, art: string): void => {
 /** A jagged 10-wide stack with a few overhangs, deterministic in `seed`. */
 const randomStack = (seed: number): string[] => {
   let s = seed
-  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+  const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
   const heights = Array.from({ length: 10 }, () => 2 + Math.floor(rnd() * 5))
   const rows = Array.from({ length: 20 }, () => Array<string>(10).fill('.'))
-  for (let x = 0; x < 10; x++)
-    for (let y = 20 - heights[x]; y < 20; y++) if (rnd() > 0.12) rows[y][x] = '#'
+  for (let x = 0; x < 10; x++) for (let y = 20 - heights[x]; y < 20; y++) if (rnd() > 0.12) rows[y][x] = '#'
   return rows.map((r) => r.join(''))
 }
 
@@ -278,9 +277,7 @@ describe('Game', () => {
         const cw = countSpins(board, name, 'rotate-right')
         const ccw = countSpins(flipped, twin, 'rotate-left')
         if (cw.count !== ccw.count || cw.best !== ccw.best) {
-          asymmetric.push(
-            `seed ${seed} ${name}: ${cw.count}/${cw.best} vs ${twin} ${ccw.count}/${ccw.best}`
-          )
+          asymmetric.push(`seed ${seed} ${name}: ${cw.count}/${cw.best} vs ${twin} ${ccw.count}/${ccw.best}`)
         }
       }
     }
@@ -378,8 +375,7 @@ describe('Game', () => {
   // vertical I into that gap — clearing `rows` lines at once (a Tetris at 4).
   const dropIInto = (game: Game, rows: number): void => {
     const h = game.field.slots.length
-    for (let r = h - rows; r < h; r++)
-      for (let x = 0; x < 5; x++) game.field.slots[r][x] = 'O'
+    for (let r = h - rows; r < h; r++) for (let x = 0; x < 5; x++) game.field.slots[r][x] = 'O'
     const piece = new Piece(
       'I',
       Array.from({ length: rows }, () => [1])

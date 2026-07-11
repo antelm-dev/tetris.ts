@@ -91,7 +91,12 @@ describe('Field', () => {
     expect(field.slots.some((row) => row.every((c) => c !== 0))).toBe(false)
     expect(field.slots[4]).toEqual(['S', 0, 0, 0])
     // everything above the survivor is empty
-    expect(field.slots.slice(0, 4).flat().every((c) => c === 0)).toBe(true)
+    expect(
+      field.slots
+        .slice(0, 4)
+        .flat()
+        .every((c) => c === 0)
+    ).toBe(true)
   })
 
   it('collides reports walls, floor and filled cells at the current position', () => {

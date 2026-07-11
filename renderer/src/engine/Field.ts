@@ -1,4 +1,4 @@
-import type { Direction, Rotate, Slot } from '../types'
+import type { Direction, Rotate, Slot } from './types'
 import type Piece from './Piece'
 
 export default class Field {

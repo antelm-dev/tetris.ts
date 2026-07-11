@@ -1,12 +1,16 @@
 import type P5 from 'p5'
-import { CELL, COLS, ROWS, mix, type RGB } from './theme'
+import { mix, type RGB } from '../core/color'
+import { clamp01 } from '../core/ease'
+import { CELL, COLS, ROWS } from '../core/geometry'
 
 /**
- * One "mood" the backdrop can be in. Everything stays deliberately dark and
- * low-saturation so the playfield keeps its contrast — the accents only ever
- * surface through faint, additive nebula orbs, never the flat gradient.
+ * One "mood" the backdrop can be in — distinct from the piece themes the player
+ * picks (see `config/themes.ts`); these follow the level, not the settings.
+ * Everything stays deliberately dark and low-saturation so the playfield keeps
+ * its contrast — the accents only ever surface through faint, additive nebula
+ * orbs, never the flat gradient.
  */
-interface Theme {
+interface Mood {
   name: string
   top: RGB
   bottom: RGB
@@ -19,7 +23,7 @@ interface Theme {
  * clearly different hue families (indigo → teal → violet → ember → …) so a
  * level-up reads as a real shift of scenery, not just a brightness tweak.
  */
-const THEMES: readonly Theme[] = [
+const MOODS: readonly Mood[] = [
   { name: 'midnight', top: [10, 12, 30], bottom: [4, 5, 12], accentA: [46, 82, 190], accentB: [96, 44, 168] },
   { name: 'abyss', top: [6, 20, 28], bottom: [3, 8, 13], accentA: [26, 140, 150], accentB: [30, 86, 170] },
   { name: 'violet', top: [20, 11, 32], bottom: [7, 4, 15], accentA: [138, 58, 196], accentB: [70, 58, 200] },
@@ -41,12 +45,10 @@ interface Orb {
   bias: number // which accent this orb leans toward (0 = A, 1 = B)
 }
 
-/** Copy a theme so the interpolated "current" state can be mutated freely. */
-function cloneTheme(t: Theme): Theme {
-  return { name: t.name, top: [...t.top], bottom: [...t.bottom], accentA: [...t.accentA], accentB: [...t.accentB] }
+/** Copy a mood so the interpolated "current" state can be mutated freely. */
+function cloneMood(m: Mood): Mood {
+  return { name: m.name, top: [...m.top], bottom: [...m.bottom], accentA: [...m.accentA], accentB: [...m.accentB] }
 }
-
-const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 /**
  * Evolving abstract backdrop. A soft 4-corner gradient sets the mood while a
@@ -55,8 +57,8 @@ const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v)
  * over ~1s so transitions feel like a scene dissolving rather than a hard cut.
  */
 export class Background {
-  private cur: Theme = cloneTheme(THEMES[0])
-  private target: Theme = THEMES[0]
+  private readonly cur: Mood = cloneMood(MOODS[0])
+  private target: Mood = MOODS[0]
   private readonly orbs: Orb[] = []
   private t = 0
   private spin = 0
@@ -87,7 +89,7 @@ export class Background {
   public setLevel(level: number): void {
     if (level === this.level) return
     this.level = level
-    this.target = THEMES[(level - 1) % THEMES.length]
+    this.target = MOODS[(level - 1) % MOODS.length]
     this.pulse = 1
   }
 

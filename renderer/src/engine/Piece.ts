@@ -1,5 +1,5 @@
-import type { Direction } from '../types'
-import type { PieceName } from '../const'
+import type { Direction } from './types'
+import type { PieceName } from './const'
 
 export default class Piece {
   public name: PieceName

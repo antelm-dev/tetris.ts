@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import Game from '../../renderer/src/tetris/classes/Game'
-import Piece from '../../renderer/src/tetris/classes/Piece'
+import Game from '../../renderer/src/engine/Game'
+import Piece from '../../renderer/src/engine/Piece'
 
 const newGame = () => new Game({ width: 6, height: 10 })
 
@@ -203,6 +203,87 @@ describe('Game', () => {
 
     expect(spun).toBe(false)
     expect(game.score).toBe(0)
+  })
+
+  // Fill the bottom `rows` completely except the last column, then hard-drop a
+  // vertical I into that gap — clearing `rows` lines at once (a Tetris at 4).
+  const dropIInto = (game: Game, rows: number): void => {
+    const h = game.field.slots.length
+    for (let r = h - rows; r < h; r++)
+      for (let x = 0; x < 5; x++) game.field.slots[r][x] = 'O'
+    const piece = new Piece(
+      'I',
+      Array.from({ length: rows }, () => [1])
+    )
+    piece.x = 5
+    piece.y = 0
+    game.activePiece = piece
+    game.push()
+  }
+
+  // Fill the bottom row except the last column, then drop a 1×1 into the gap.
+  const dropSingle = (game: Game): void => {
+    const h = game.field.slots.length
+    for (let x = 0; x < 5; x++) game.field.slots[h - 1][x] = 'O'
+    const piece = new Piece('O', [[1]])
+    piece.x = 5
+    piece.y = 0
+    game.activePiece = piece
+    game.push()
+  }
+
+  it('rewards back-to-back Tetrises with a 1.5× bonus and fires onB2B', () => {
+    const game = newGame()
+    const chains: number[] = []
+    game.events.onB2B = (chain) => chains.push(chain)
+
+    dropIInto(game, 4) // first Tetris: opens the chain, no bonus yet
+    const first = game.score
+    expect(first).toBe(800)
+    expect(game.b2b).toBe(1)
+    expect(chains).toEqual([])
+
+    dropIInto(game, 4) // second Tetris: back-to-back → 1.5× + combo bonus
+    expect(game.b2b).toBe(2)
+    expect(chains).toEqual([2])
+    // 1200 (800 × 1.5) for the clear plus a combo bonus for the 2nd clear.
+    expect(game.score).toBeGreaterThan(first + 1200 - 1)
+  })
+
+  it('breaks the back-to-back chain on a plain line clear', () => {
+    const game = newGame()
+    dropIInto(game, 4)
+    expect(game.b2b).toBe(1)
+    dropSingle(game) // a plain single — not difficult — resets the chain
+    expect(game.b2b).toBe(0)
+  })
+
+  it('awards a combo bonus for consecutive clears and fires onCombo', () => {
+    const game = newGame()
+    const combos: number[] = []
+    game.events.onCombo = (combo) => combos.push(combo)
+
+    dropSingle(game) // first clear: combo 0, no bonus
+    expect(game.score).toBe(100)
+    expect(combos).toEqual([])
+
+    dropSingle(game) // second clear: combo 1 → +50 × 1 × level
+    expect(game.streak).toBe(2)
+    expect(combos).toEqual([1])
+    expect(game.score).toBe(100 + 100 + 50)
+  })
+
+  it('resets the combo when a drop clears no lines', () => {
+    const game = newGame()
+    dropSingle(game)
+    expect(game.streak).toBe(1)
+    // Park a piece off to the side so it locks without completing a row.
+    const piece = new Piece('O', [[1]])
+    piece.x = 0
+    piece.y = 0
+    game.activePiece = piece
+    game.push()
+    expect(game.streak).toBe(0)
   })
 
   it('toggles pause, halting updates', () => {

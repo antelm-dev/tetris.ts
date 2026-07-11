@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import Field from '../../renderer/src/tetris/classes/Field'
-import Piece from '../../renderer/src/tetris/classes/Piece'
-import type { Slot } from '../../renderer/src/tetris/types'
+import Field from '../../renderer/src/engine/Field'
+import Piece from '../../renderer/src/engine/Piece'
+import type { Slot } from '../../renderer/src/engine/types'
 
 const fill = (field: Field, rows: Slot[][]) => {
   rows.forEach((row, i) => row.forEach((cell, j) => (field.slots[i][j] = cell)))

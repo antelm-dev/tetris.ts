@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import Piece from '../../renderer/src/tetris/classes/Piece'
+import Piece from '../../renderer/src/engine/Piece'
 
 describe('Piece', () => {
   it('deep-copies the shape it is constructed with', () => {

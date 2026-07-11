@@ -1,3 +1,12 @@
+/**
+ * Standard board dimensions, in cells. The engine takes its size as a
+ * constructor option, so these are only the defaults every caller passes — but
+ * they live here, next to the pieces, rather than in the render layer that
+ * happens to also need them for its world-space maths.
+ */
+export const COLS = 10
+export const ROWS = 20
+
 export const PIECES_SHAPES = {
   O: [
     [1, 1],

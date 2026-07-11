@@ -49,9 +49,14 @@ renderer/
   index.html
   styles.css
   src/
-    renderer.ts      # entry: mounts the game, wires the bridge
-    tetris/          # game engine (Game, Field, Piece, …)
-    tetris-p5/       # p5.js WebGL renderer
+    main.ts          # entry: mounts the game, wires the bridge
+    engine/          # pure game engine (Game, Field, Piece, …) — no p5, no DOM
+    app/             # composition root: p5 lifecycle, game loop, event wiring
+    scene/           # the WebGL world: blocks, well, backdrop, particles, camera
+    hud/             # p5-drawn chrome: HUD, menu, shared widgets
+    input/           # keyboard → game actions (DAS/ARR)
+    config/          # themes, key bindings, persisted settings
+    core/            # colour, easing, geometry, DOM helpers
 resources/
   icon.png           # app icon (window + electron-builder)
 scripts/

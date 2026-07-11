@@ -25,6 +25,19 @@ export interface GameEvents {
    * L-spin, S-spin, …). `lines` is how many rows it cleared (0–4).
    */
   onSpin?: (name: PieceName, lines: number) => void
+  /**
+   * A back-to-back difficult clear landed — a Tetris (4-line) or any spin
+   * clear immediately following another difficult clear, with no plain clear
+   * breaking the chain. `chain` is the running count of difficult clears
+   * (≥ 2 whenever this fires), `lines` how many rows this clear removed.
+   */
+  onB2B?: (chain: number, name: PieceName, lines: number) => void
+  /**
+   * A combo continued — a clear made while a run of consecutive clears was
+   * already going. `combo` is the number of clears past the first (≥ 1 here),
+   * `level` the level the bonus was scored at.
+   */
+  onCombo?: (combo: number, level: number) => void
   /** A piece just locked into the field. `hard` is true for a hard drop. */
   onLock?: (hard: boolean) => void
   /** One or more rows were completed. `rows` are the (pre-collapse) indices. */

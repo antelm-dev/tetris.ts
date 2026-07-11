@@ -15,15 +15,40 @@ files:
 asar: true
 npmRebuild: false
 win:
-  target: nsis
+  target:
+    - nsis
+    - portable
   executableName: tetris
+  artifactName: ${name}-${version}-${arch}.${ext}
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   createDesktopShortcut: always
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+portable:
+  artifactName: ${name}-${version}-portable.${ext}
 mac:
-  target: dmg
+  target:
+    - dmg
+    - zip
   category: public.app-category.games
+  executableName: tetris
+  artifactName: ${name}-${version}-${arch}.${ext}
+  identity: null
+dmg:
+  artifactName: ${name}-${version}-${arch}.${ext}
 linux:
-  target: AppImage
+  target:
+    - AppImage
+    - deb
   category: Game
+  executableName: tetris
+  synopsis: Tetris in TypeScript on Electron
+  maintainer: Adel Terki <adel.terki2@outlook.fr>
+  syncDesktopName: true
+  artifactName: ${name}-${version}-${arch}.${ext}
+appImage:
+  artifactName: ${name}-${version}-${arch}.${ext}
+deb:
+  artifactName: ${name}-${version}-${arch}.${ext}

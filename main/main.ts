@@ -45,7 +45,7 @@ async function serveClient(request: Request): Promise<Response> {
 
   let requested: string
   try {
-    requested = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.replace(/^\/+/, ''))
+    requested = pathname === '/' ? 'index.electron.html' : decodeURIComponent(pathname.replace(/^\/+/, ''))
   } catch {
     // Malformed percent-encoding.
     return new Response('Bad request', { status: 400 })

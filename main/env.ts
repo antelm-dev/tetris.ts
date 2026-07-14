@@ -15,14 +15,14 @@ export const env = Object.freeze({
     width: 1024,
     height: 768
   },
-  devServerUrl: 'http://localhost:5173',
+  devServerUrl: 'http://localhost:5173/index.electron.html',
   paths: {
     preload: join(rootDir, 'preload.cjs'),
     clientDir: join(rootDir, '../dist-renderer'),
     icon: join(rootDir, '../resources/icon.png')
   },
   urls: {
-    renderer: 'app://bundle/index.html'
+    renderer: 'app://bundle/index.electron.html'
   }
 })
 

@@ -17,10 +17,19 @@
     "unicorn/no-new-array": "off",
     "unicorn/require-module-specifiers": "off"
   },
-  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "release"],
+  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "dist-web", "release", "server/data"],
   "overrides": [
-    { "files": ["main/**/*.ts", "scripts/**/*.mjs", "*.config.*", "test/**/*.ts"], "env": { "node": true } },
+    {
+      "files": ["main/**/*.ts", "scripts/**/*.mjs", "server/**/*.mjs", "*.config.*", "test/**/*.ts"],
+      "env": { "node": true }
+    },
     { "files": ["renderer/**/*.ts"], "env": { "browser": true } },
+    {
+      "files": ["server/**/*.mjs"],
+      "rules": {
+        "promise/no-callback-in-promise": ["error", { "exceptions": ["next"] }]
+      }
+    },
     { "files": ["**/*.d.ts"], "rules": { "typescript/consistent-type-imports": "off" } },
     {
       "files": ["test/**/*.ts"],

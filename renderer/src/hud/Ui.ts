@@ -95,10 +95,10 @@ const TITLEBAR_H = 34 // custom frameless titlebar in styles.css
 const HUD_MIN_W = 120
 const HUD_MAX_W = 220
 const HUD_PAD_IN = 12 // inner panel padding
-const HUD_PRIMARY_ROW_H = 42 // Score / Level row (label + big value)
-const HUD_ROW_GAP = 4
-const HUD_SECONDARY_ROW_H = 22 // Best · Lines row
-const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H * 2 + HUD_ROW_GAP * 2 + HUD_SECONDARY_ROW_H
+const HUD_PRIMARY_ROW_H = 48 // Score + Level, side by side
+const HUD_ROW_GAP = 8
+const HUD_SECONDARY_ROW_H = 32 // Best + Lines, side by side
+const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H + HUD_ROW_GAP + HUD_SECONDARY_ROW_H
 const HUD_CALLOUT_GAP = 8
 /** How much the value pulses on a change — reduced-motion drops this to 0. */
 const PULSE_SCALE_PRIMARY = 0.22
@@ -378,48 +378,59 @@ export class Ui {
     g.translate(HUD_PAD, chromeTop())
     g.scale(scale)
 
-    panel(g, 0, 0, w, HUD_PANEL_H, { r: 12, fill: PANEL, fillA: 214, strokeA: 64 })
+    panel(g, 0, 0, w, HUD_PANEL_H, { r: 12, fill: PANEL, fillA: 232, strokeA: 82 })
 
     const innerW = w - HUD_PAD_IN * 2
-    let ry = HUD_PAD_IN
-    ry = this.drawPrimaryStat(g, this.stats.score, HUD_PAD_IN, ry, innerW, accent) + HUD_ROW_GAP
-    ry = this.drawPrimaryStat(g, this.stats.level, HUD_PAD_IN, ry, innerW, accent) + HUD_ROW_GAP
-    this.drawSecondaryRow(g, HUD_PAD_IN, ry, innerW, accent)
+    const primaryGap = 16
+    const primaryColW = (innerW - primaryGap) / 2
+    this.drawPrimaryStat(g, this.stats.score, HUD_PAD_IN, HUD_PAD_IN, primaryColW, accent)
+    this.drawPrimaryStat(g, this.stats.level, HUD_PAD_IN + primaryColW + primaryGap, HUD_PAD_IN, primaryColW, accent)
+
+    const dividerY = HUD_PAD_IN + HUD_PRIMARY_ROW_H + HUD_ROW_GAP / 2
+    g.push()
+    g.stroke(FG[0], FG[1], FG[2], 28)
+    g.strokeWeight(1)
+    g.line(HUD_PAD_IN, dividerY + 0.5, w - HUD_PAD_IN, dividerY + 0.5)
+    g.pop()
+
+    this.drawSecondaryRow(g, HUD_PAD_IN, HUD_PAD_IN + HUD_PRIMARY_ROW_H + HUD_ROW_GAP, innerW, accent)
 
     this.drawMoveCallout(g, 0, HUD_PANEL_H + HUD_CALLOUT_GAP, w)
     g.pop()
   }
 
-  /** A large Score/Level row. Returns the y just past it, so callers can stack rows. */
-  private drawPrimaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): number {
+  /** Primary value cell; Score and Level share equal width, both centered within it. */
+  private drawPrimaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): void {
+    const cx = x + w / 2
     g.push()
     g.noStroke()
-    g.fill(FG[0], FG[1], FG[2], 128)
-    g.textAlign(g.LEFT, g.TOP)
-    g.textSize(10)
-    setTracking(g, 2.2)
-    g.text(s.label.toUpperCase(), x, y)
+    g.fill(FG[0], FG[1], FG[2], 168)
+    g.textAlign(g.CENTER, g.TOP)
+    g.textSize(9)
+    setTracking(g, 1.8)
+    g.text(s.label.toUpperCase(), cx, y)
     g.pop()
 
     const b = hump(s.bump)
     const col = mix(FG, accent, b)
     const scale = 1 + (settings.reducedMotionActive ? 0 : b * PULSE_SCALE_PRIMARY)
+    const valueSize = 24
     g.push()
     g.noStroke()
     g.fill(col[0], col[1], col[2])
-    g.textAlign(g.LEFT, g.BASELINE)
-    g.textSize(22)
+    g.textAlign(g.CENTER, g.BASELINE)
+    g.textSize(valueSize)
     setTracking(g, 0)
+    const fittedSize = Math.max(15, valueSize * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
+    g.textSize(fittedSize)
     const value = truncate(g, s.value, w)
     const dc = g.drawingContext as CanvasRenderingContext2D
     dc.shadowColor = `rgba(${accent[0]}, ${accent[1]}, ${accent[2]}, 0.35)`
     dc.shadowBlur = 12
-    g.translate(x, y + HUD_PRIMARY_ROW_H - 4)
+    g.translate(cx, y + HUD_PRIMARY_ROW_H - 3)
     g.scale(scale)
     g.text(value, 0, 0)
     g.pop()
-
-    return y + HUD_PRIMARY_ROW_H
   }
 
   /** Best + Lines, side by side, dimmer and smaller — secondary information. */
@@ -431,13 +442,14 @@ export class Ui {
   }
 
   private drawSecondaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): void {
+    const cx = x + w / 2
     g.push()
     g.noStroke()
-    g.fill(FG[0], FG[1], FG[2], 105)
-    g.textAlign(g.LEFT, g.TOP)
-    g.textSize(9)
-    setTracking(g, 1.8)
-    g.text(s.label.toUpperCase(), x, y)
+    g.fill(FG[0], FG[1], FG[2], 150)
+    g.textAlign(g.CENTER, g.TOP)
+    g.textSize(8)
+    setTracking(g, 1.5)
+    g.text(s.label.toUpperCase(), cx, y)
     g.pop()
 
     const b = hump(s.bump)
@@ -445,12 +457,14 @@ export class Ui {
     const scale = 1 + (settings.reducedMotionActive ? 0 : b * PULSE_SCALE_SECONDARY)
     g.push()
     g.noStroke()
-    g.fill(col[0], col[1], col[2], 220)
-    g.textAlign(g.LEFT, g.TOP)
-    g.textSize(12)
+    g.fill(col[0], col[1], col[2], 245)
+    g.textAlign(g.CENTER, g.TOP)
+    g.textSize(14)
     setTracking(g, 0)
+    const fittedSize = Math.max(10, 14 * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
+    g.textSize(fittedSize)
     const value = truncate(g, s.value, w)
-    g.translate(x, y + 9)
+    g.translate(cx, y + 14)
     g.scale(scale)
     g.text(value, 0, 0)
     g.pop()
@@ -507,16 +521,16 @@ export class Ui {
     const c = this.callout
     const pop = hump(c.pop)
     const hasBadges = c.b2b > 0 || c.combo > 0
-    let h = 52
-    if (c.sub && hasBadges) h = 86
-    else if (c.sub) h = 68
-    else if (hasBadges) h = 72
+    let h = 48
+    if (c.sub && hasBadges) h = 76
+    else if (c.sub) h = 56
+    else if (hasBadges) h = 64
 
     g.push()
     g.translate(x + (1 - a) * -18, y)
     g.scale(1 + pop * 0.08)
 
-    panel(g, 0, 0, w, h, { r: 10, fill: PANEL, fillA: 220 * a, strokeA: 70 * a })
+    panel(g, 0, 0, w, h, { r: 10, fill: PANEL, fillA: 236 * a, strokeA: 84 * a })
 
     g.noStroke()
     g.fill(c.color[0], c.color[1], c.color[2], 255 * a)
@@ -527,25 +541,25 @@ export class Ui {
     g.noStroke()
     g.fill(c.color[0], c.color[1], c.color[2], 255 * a)
     g.textAlign(g.LEFT, g.TOP)
-    g.textSize(c.title.length > 10 ? 12 : 14)
+    g.textSize(c.title.length > 10 ? 12 : 15)
     setTracking(g, 1.4)
     dc.shadowColor = `rgba(${c.color[0]}, ${c.color[1]}, ${c.color[2]}, ${0.55 * a})`
     dc.shadowBlur = 16 + pop * 10
-    g.text(c.title, 14, 12)
+    g.text(c.title, 14, 10)
     g.pop()
 
     if (c.sub) {
       g.noStroke()
-      g.fill(FG[0], FG[1], FG[2], 210 * a)
+      g.fill(FG[0], FG[1], FG[2], 235 * a)
       g.textAlign(g.LEFT, g.TOP)
-      g.textSize(11)
-      setTracking(g, 2)
-      g.text(c.sub, 14, 34)
+      g.textSize(12)
+      setTracking(g, 1.2)
+      g.text(c.sub, 14, 31)
     }
 
     if (hasBadges) {
       let bx = 14
-      const by = c.sub ? 54 : 36
+      const by = c.sub ? 51 : 34
       if (c.b2b > 0) bx = this.drawBadge(g, bx, by, `B2B ×${c.b2b}`, GOLD, a)
       if (c.combo > 0) this.drawBadge(g, bx, by, `COMBO ×${c.combo}`, CYAN, a)
     }

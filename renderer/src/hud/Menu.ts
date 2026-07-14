@@ -553,8 +553,6 @@ export class Menu {
     const accent = UI.accent
     const dc = g.drawingContext as CanvasRenderingContext2D
     const title = this.screen === 'main' ? 'TETRIS.TS' : 'SETTINGS'
-    const sub =
-      this.screen === 'main' ? 'A 3D take on the classic' : 'Theme, controls and comfort — saved automatically'
 
     g.push()
     g.noStroke()
@@ -567,14 +565,16 @@ export class Menu {
     g.text(title, CARD_W / 2 - 3, 46)
     g.pop()
 
-    g.push()
-    g.noStroke()
-    g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
-    g.textAlign(g.CENTER, g.CENTER)
-    g.textSize(11)
-    setTracking(g, 1.4)
-    g.text(sub, CARD_W / 2 - 0.7, 74)
-    g.pop()
+    if (this.screen !== 'main') {
+      g.push()
+      g.noStroke()
+      g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
+      g.textAlign(g.CENTER, g.CENTER)
+      g.textSize(11)
+      setTracking(g, 1.4)
+      g.text('Theme, controls and comfort — saved automatically', CARD_W / 2 - 0.7, 74)
+      g.pop()
+    }
   }
 
   private drawHeading(g: P5.Graphics, label: string, y: number, h: number, a: number): void {

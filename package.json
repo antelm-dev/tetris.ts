@@ -47,8 +47,8 @@
     "dotenv": "^16.4.7",
     "electron": "^40.8.0",
     "electron-builder": "^26.0.12",
-    "electron-ipc-module": "link:../electron-libs/ipc-module",
-    "electron-run": "link:../electron-libs/electron-run",
+    "electron-ipc-module": "github:antelm-dev/electron-ipc-module#main",
+    "electron-run": "github:antelm-dev/electron-run#master",
     "oxfmt": "^0.58.0",
     "oxlint": "^1.73.0",
     "p5": "^1.11.3",
@@ -62,8 +62,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
+      "electron-ipc-module",
       "electron-winstaller",
-      "esbuild"
+      "esbuild",
+      "rollup-plugin-electron-run"
     ]
   },
   "desktopName": "com.adelterki.tetris.desktop"

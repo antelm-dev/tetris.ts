@@ -72,9 +72,11 @@ function createWindow(): BrowserWindow {
     icon: env.paths.icon,
     show: false,
     autoHideMenuBar: true,
-    resizable: false,
+    resizable: true,
     maximizable: false,
     backgroundColor: '#000000',
+    minWidth: 1024,
+    minHeight: 768,
     // Frameless so the renderer draws its own titlebar and drives min/close/
     // fullscreen through the `window` IPC module.
     frame: false,

@@ -12,8 +12,8 @@ export const env = Object.freeze({
   production: process.env.NODE_ENV === 'production',
   scheme: 'app',
   window: {
-    width: 600,
-    height: 900
+    width: 1024,
+    height: 768,
   },
   devServerUrl: 'http://localhost:5173',
   paths: {

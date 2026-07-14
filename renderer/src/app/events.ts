@@ -31,7 +31,7 @@ export function wireEvents(game: Game, view: Presentation): void {
 
     onRotate: () => motion.onRotate(),
 
-    onSpin: (name) => {
+    onSpin: (name, lines) => {
       // Extra flourish for a spin: a bright pop plus a spark burst centered
       // on the piece, so a tucked T-spin / L-spin reads as a special move.
       const ap = game.activePiece
@@ -43,6 +43,7 @@ export function wireEvents(game: Game, view: Presentation): void {
       }
       fx.shake(0.4)
       ui.setScore(game.score) // a spin scores even with no line clear
+      ui.announceSpin(name, lines)
     },
 
     onLock: (hard) => {
@@ -70,6 +71,7 @@ export function wireEvents(game: Game, view: Presentation): void {
       ui.setScore(game.score)
       ui.setLines(game.lines)
       ui.setLevel(level)
+      ui.announceClear(count)
     },
 
     onB2B: (chain) => {
@@ -80,7 +82,7 @@ export function wireEvents(game: Game, view: Presentation): void {
       fx.burst(0, 0, 24, gold, 340 * mag)
       fx.shake(0.4 + Math.min(0.4, chain * 0.06))
       ui.setScore(game.score)
-      ui.showBanner(`Back-to-Back ×${chain}`)
+      ui.announceB2B(chain)
     },
 
     onCombo: (combo) => {
@@ -89,7 +91,7 @@ export function wireEvents(game: Game, view: Presentation): void {
       fx.burst(0, 0, 8 + combo * 2, cyan, 180 + combo * 30)
       fx.shake(0.15 + Math.min(0.35, combo * 0.05))
       ui.setScore(game.score)
-      ui.showBanner(`Combo ×${combo + 1}`)
+      ui.announceCombo(combo + 1)
     },
 
     onLevelUp: (level) => ui.setLevel(level),
@@ -115,6 +117,7 @@ export function wireEvents(game: Game, view: Presentation): void {
       ui.setScore(0)
       ui.setLines(0)
       ui.setLevel(1)
+      ui.clearMove()
       ui.hideOverlay()
     }
   }

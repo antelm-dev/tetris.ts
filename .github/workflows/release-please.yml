@@ -1,0 +1,73 @@
+name: release-please
+
+on:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  HUSKY: "0"
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            dist: dist:win
+          - os: ubuntu-latest
+            dist: dist:linux
+          - os: macos-latest
+            dist: dist:mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build installers
+        run: pnpm ${{ matrix.dist }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(release/*.{exe,dmg,zip,AppImage,deb,yml,yaml,blockmap})
+          if ((${#files[@]} == 0)); then
+            echo "No release artifacts found in release/"
+            ls -la release/ || true
+            exit 1
+          fi
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" "${files[@]}" --clobber

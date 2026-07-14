@@ -37,12 +37,15 @@
     "dist": "pnpm build && electron-builder",
     "dist:win": "pnpm build && electron-builder --win",
     "dist:mac": "pnpm build && electron-builder --mac",
-    "dist:linux": "pnpm build && electron-builder --linux"
+    "dist:linux": "pnpm build && electron-builder --linux",
+    "prepare": "husky"
   },
   "dependencies": {
     "express": "^5.1.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
     "@rollup/plugin-commonjs": "^28.0.2",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.0",
@@ -57,6 +60,7 @@
     "electron-builder": "^26.0.12",
     "electron-ipc-module": "github:antelm-dev/electron-ipc-module#main",
     "electron-run": "github:antelm-dev/electron-run#master",
+    "husky": "^9.1.7",
     "oxfmt": "^0.58.0",
     "oxlint": "^1.73.0",
     "p5": "^1.11.3",

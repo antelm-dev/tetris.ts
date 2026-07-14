@@ -2,38 +2,59 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, develop]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# The electron-run / electron-ipc-module dependencies are installed straight
-# from GitHub and built on install via their `prepare` scripts. Neither the
-# libraries' builds nor tetris's build/tests need the Electron binary, so skip
-# the download to keep CI fast.
 env:
-  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  HUSKY: "0"
 
 jobs:
-  ci:
+  commitlint:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
-      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
 
-      - run: yarn install --immutable
+      - name: Lint commit messages
+        run: pnpm exec commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
 
-      - run: yarn format:check
-      - run: yarn lint
-      - run: yarn typecheck
-      - run: yarn test
-      - run: yarn build
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

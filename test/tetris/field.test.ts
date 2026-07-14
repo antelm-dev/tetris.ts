@@ -56,7 +56,7 @@ describe('Field', () => {
     piece.x = 3
     piece.y = 2
     const cleared = field.placePiece(piece)
-    expect(cleared).toBe(1)
+    expect(cleared).toEqual({ cleared: 1, lockOut: false })
     expect(field.slots.flat().every((c) => c === 0)).toBe(true)
   })
 
@@ -65,7 +65,7 @@ describe('Field', () => {
     const piece = new Piece('O', [[1]])
     piece.x = 0
     piece.y = 2
-    expect(field.placePiece(piece)).toBe(0)
+    expect(field.placePiece(piece)).toEqual({ cleared: 0, lockOut: false })
     expect(field.slots[2][0]).toBe('O')
   })
 
@@ -87,7 +87,7 @@ describe('Field', () => {
 
     const cleared = field.placePiece(piece)
 
-    expect(cleared).toBe(2)
+    expect(cleared).toEqual({ cleared: 2, lockOut: false })
     expect(field.slots.some((row) => row.every((c) => c !== 0))).toBe(false)
     expect(field.slots[4]).toEqual(['S', 0, 0, 0])
     // everything above the survivor is empty
@@ -132,6 +132,35 @@ describe('Field', () => {
     // Open the cell above -> it can move up, so no longer immobile.
     field.slots[0][1] = 0
     expect(field.isImmobile(piece)).toBe(false)
+  })
+
+  it('reports lock-out when a cell would place above the well', () => {
+    const field = new Field({ width: 4, height: 3 })
+    const piece = new Piece('O', [
+      [1, 1],
+      [1, 1]
+    ])
+    piece.x = 0
+    piece.y = -1 // top row above the board, bottom row on row 0
+    expect(field.placePiece(piece)).toEqual({ cleared: 0, lockOut: true })
+    expect(field.slots[0][0]).toBe('O')
+    expect(field.slots[0][1]).toBe('O')
+  })
+
+  it('reports lock-out when the whole piece is above the well', () => {
+    const field = new Field({ width: 4, height: 3 })
+    const piece = new Piece('O', [[1]])
+    piece.x = 0
+    piece.y = -1
+    expect(field.placePiece(piece)).toEqual({ cleared: 0, lockOut: true })
+    expect(field.slots.flat().every((c) => c === 0)).toBe(true)
+  })
+
+  it('isEmpty is true only for a fully cleared well', () => {
+    const field = new Field({ width: 2, height: 2 })
+    expect(field.isEmpty()).toBe(true)
+    field.slots[1][0] = 'O'
+    expect(field.isEmpty()).toBe(false)
   })
 
   it('reset empties the field', () => {

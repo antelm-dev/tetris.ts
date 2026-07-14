@@ -13,7 +13,7 @@ export const env = Object.freeze({
   scheme: 'app',
   window: {
     width: 1024,
-    height: 768,
+    height: 768
   },
   devServerUrl: 'http://localhost:5173',
   paths: {

@@ -23,4 +23,8 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btn-min')?.addEventListener('click', () => bridge?.window.minimize())
   $('btn-full')?.addEventListener('click', () => bridge?.window.toggleFullscreen())
   $('btn-close')?.addEventListener('click', () => bridge?.window.close())
+
+  bridge?.window.onFullscreenChanged((fullscreen) => {
+    document.body.classList.toggle('is-fullscreen', fullscreen)
+  })
 })

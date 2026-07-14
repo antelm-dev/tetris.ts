@@ -120,6 +120,7 @@ describe('Game', () => {
 
   it('scores 100 for a single line clear', () => {
     const game = newGame()
+    game.field.slots[0][0] = 'S' // survivor — keep the clear from being perfect
     // fill the bottom row except the last column
     for (let x = 0; x < 5; x++) game.field.slots[9][x] = 'O'
     const piece = new Piece('O', [[1]])
@@ -373,8 +374,10 @@ describe('Game', () => {
 
   // Fill the bottom `rows` completely except the last column, then hard-drop a
   // vertical I into that gap — clearing `rows` lines at once (a Tetris at 4).
+  // A survivor block stays on the board so the clear is not a perfect clear.
   const dropIInto = (game: Game, rows: number): void => {
     const h = game.field.slots.length
+    game.field.slots[0][0] = 'S'
     for (let r = h - rows; r < h; r++) for (let x = 0; x < 5; x++) game.field.slots[r][x] = 'O'
     const piece = new Piece(
       'I',
@@ -389,6 +392,7 @@ describe('Game', () => {
   // Fill the bottom row except the last column, then drop a 1×1 into the gap.
   const dropSingle = (game: Game): void => {
     const h = game.field.slots.length
+    game.field.slots[0][0] = 'S'
     for (let x = 0; x < 5; x++) game.field.slots[h - 1][x] = 'O'
     const piece = new Piece('O', [[1]])
     piece.x = 5
@@ -461,5 +465,156 @@ describe('Game', () => {
     expect(game.activePiece?.y).toBe(0) // no drop while paused
     game.action('pause')
     expect(game.isPaused).toBe(false)
+  })
+
+  describe('lock-out', () => {
+    it('ends the game when a piece locks partially above the field', () => {
+      const game = new Game({ width: 10, height: 20 })
+      // Ground the O while its top row is still above the well.
+      game.field.slots[1][4] = 'L'
+      game.field.slots[1][5] = 'L'
+      const piece = new Piece('O', PIECES_SHAPES.O)
+      piece.x = 4
+      piece.y = -1
+      game.activePiece = piece
+      expect(game.field.checkCollision(piece, 'down')).toBe(true)
+      game.push()
+      expect(game.gameOver).toBe(true)
+      expect(game.field.slots[0][4]).toBe('O')
+      expect(game.field.slots[0][5]).toBe('O')
+    })
+
+    it('ends the game when a piece locks entirely above the field', () => {
+      const game = new Game({ width: 10, height: 20 })
+      game.field.slots[0][4] = 'L'
+      game.field.slots[0][5] = 'L'
+      const piece = new Piece('O', PIECES_SHAPES.O)
+      piece.x = 4
+      piece.y = -2
+      game.activePiece = piece
+      expect(game.field.checkCollision(piece, 'down')).toBe(true)
+      game.push()
+      expect(game.gameOver).toBe(true)
+      expect(game.field.slots[0][4]).toBe('L')
+      expect(game.field.slots[0][5]).toBe('L')
+    })
+
+    it('does not end the game on a normal on-board lock', () => {
+      const game = newGame()
+      const piece = new Piece('O', [[1]])
+      piece.x = 2
+      piece.y = 0
+      game.activePiece = piece
+      game.push()
+      expect(game.gameOver).toBe(false)
+      expect(game.field.slots[9][2]).toBe('O')
+    })
+  })
+
+  describe('scoring', () => {
+    it('scales plain line clears with the current level', () => {
+      const game = newGame()
+      game.level = 3
+      dropSingle(game)
+      expect(game.score).toBe(300)
+    })
+
+    it('scales spin clears with the current level', () => {
+      const game = new Game({ width: 10, height: 20 })
+      game.level = 2
+      fillRow(game, 17, '###..#....')
+      fillRow(game, 18, '###...####')
+      fillRow(game, 19, '####.#####')
+      const piece = new Piece('T', PIECES_SHAPES.T)
+      piece.rotate('right')
+      piece.x = 2
+      piece.y = 16
+      game.activePiece = piece
+      game.action('rotate-right')
+      game.push()
+      expect(game.score).toBe(2400) // 1200 × level 2
+    })
+
+    it('awards soft-drop and hard-drop distance points', () => {
+      const soft = newGame()
+      soft.activePiece = new Piece('O', [[1]])
+      soft.activePiece.x = 0
+      soft.activePiece.y = 0
+      soft.action('down')
+      soft.action('down')
+      expect(soft.score).toBe(2)
+
+      const hard = newGame()
+      hard.activePiece = new Piece('O', [[1]])
+      hard.activePiece.x = 0
+      hard.activePiece.y = 0
+      hard.action('push') // hard drop from row 0 → 9
+      expect(hard.score).toBe(18) // 9 cells × 2
+    })
+
+    it('stacks combo and back-to-back with level scaling', () => {
+      const game = newGame()
+      game.level = 2
+      dropIInto(game, 4)
+      expect(game.score).toBe(1600) // 800 × 2
+      dropIInto(game, 4)
+      // second Tetris: floor(800×2×1.5)=2400 plus combo 50×1×2=100
+      expect(game.score).toBe(1600 + 2400 + 100)
+      expect(game.b2b).toBe(2)
+    })
+
+    it('awards a perfect-clear bonus when a clear empties the well', () => {
+      const game = new Game({ width: 4, height: 4 })
+      const perfectClears: number[] = []
+      game.events.onPerfectClear = (lines) => perfectClears.push(lines)
+      for (let x = 0; x < 3; x++) game.field.slots[3][x] = 'O'
+      const piece = new Piece('O', [[1]])
+      piece.x = 3
+      piece.y = 0
+      game.activePiece = piece
+      game.push()
+      // single (100) + perfect clear (800) at level 1
+      expect(game.score).toBe(900)
+      expect(game.field.isEmpty()).toBe(true)
+      expect(perfectClears).toEqual([1])
+    })
+  })
+
+  describe('7-bag determinism', () => {
+    const mulberry32 = (seed: number) => {
+      let s = seed >>> 0
+      return () => {
+        s = (s + 0x6d2b79f5) >>> 0
+        let t = s
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+      }
+    }
+
+    const dealNames = (seed: number, count: number) => {
+      const game = new Game({ width: 10, height: 40, random: mulberry32(seed) })
+      const names: string[] = []
+      game.events.onSpawn = (name) => names.push(name)
+      game.start()
+      while (names.length < count) {
+        game.push(true)
+        if (game.gameOver) break
+        game.update()
+      }
+      return names
+    }
+
+    it('deals every tetromino exactly once per seven-piece bag', () => {
+      const names = dealNames(7, 14)
+      const all = ['I', 'J', 'L', 'O', 'S', 'T', 'Z']
+      expect(names.slice(0, 7).sort()).toEqual(all)
+      expect(names.slice(7, 14).sort()).toEqual(all)
+    })
+
+    it('reproduces the same sequence for the same seed', () => {
+      expect(dealNames(42, 20)).toEqual(dealNames(42, 20))
+      expect(dealNames(42, 20)).not.toEqual(dealNames(43, 20))
+    })
   })
 })

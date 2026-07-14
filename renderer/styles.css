@@ -47,6 +47,10 @@ body {
   z-index: 10;
 }
 
+body.is-fullscreen #titlebar {
+  display: none;
+}
+
 #title {
   font-size: 12px;
   letter-spacing: 0.22em;

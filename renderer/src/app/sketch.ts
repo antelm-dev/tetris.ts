@@ -1,6 +1,6 @@
 import P5 from 'p5'
 import { getWindowSize } from '../core/dom'
-import { CELL, COLS, ROWS } from '../core/geometry'
+import { CELL, COLS, ROWS, sidePanelTop, sidePanelX } from '../core/geometry'
 import { Game } from '../engine'
 import { Input } from '../input/Input'
 import { Menu } from '../hud/Menu'
@@ -76,7 +76,12 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
 
       // Best score comes from disk; a new record pushed from the main process
       // surfaces as a banner.
-      void scores?.get().then((best) => ui.setBest(best))
+      void scores
+        ?.get()
+        .then((best) => ui.setBest(best))
+        .catch(() => {
+          // High-score load is best-effort; the game stays playable without it.
+        })
       scores?.onBeaten((best) => ui.showBanner(`New high score: ${best}`))
     }
 
@@ -86,9 +91,11 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
      */
     p.keyPressed = (): boolean | void => {
       if (scene !== 'play') return
-      // Tab reveals the controls legend under the well, and hides it again.
+      // Tab reveals the controls legend under the well, and hides it again;
+      // it also dismisses the one-shot start-of-run hint early.
       if (p.key === 'Tab') {
         ui.toggleLegend()
+        ui.dismissStartHint()
         return false
       }
       // Back to the menu from a paused or finished game — the only two moments
@@ -96,8 +103,30 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
       if ((p.key === 'm' || p.key === 'M') && (game.isPaused || game.gameOver)) openMenu()
     }
 
-    p.mouseMoved = (): void => menu.pointer(p.mouseX, p.mouseY)
-    p.mousePressed = (): void => menu.click(p.mouseX, p.mouseY)
+    // Only ever reaches the menu — gameplay has no mouse input, so there's
+    // nothing for these to leak into while `scene === 'play'`.
+    let lastCursor: 'pointer' | 'default' = 'default'
+    const syncCursor = (): void => {
+      const next = scene === 'menu' ? menu.cursorStyle(p.mouseX, p.mouseY) : 'default'
+      if (next === lastCursor) return
+      lastCursor = next
+      p.cursor(next === 'pointer' ? p.HAND : p.ARROW)
+    }
+
+    p.mouseMoved = (): void => {
+      menu.pointer(p.mouseX, p.mouseY)
+      syncCursor()
+    }
+    p.mousePressed = (): void => {
+      menu.click(p.mouseX, p.mouseY)
+      syncCursor()
+    }
+    p.mouseWheel = (event?: object): boolean | void => {
+      if (!menu.isOpen) return
+      const delta = (event as { delta?: number } | undefined)?.delta ?? 0
+      menu.wheel(delta)
+      return false
+    }
 
     p.draw = (): void => {
       const dt = Math.min(p.deltaTime / 1000, 0.05)
@@ -143,8 +172,8 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
         flashes.draw(p)
 
         // Side panels: hold (left) and the next queue (right, top-down).
-        const px = (COLS / 2 + 3) * CELL
-        const top = -(ROWS / 2 - 2) * CELL
+        const px = sidePanelX()
+        const top = sidePanelTop()
         drawPanel(p, game.holdPiece, -px, top)
         game.nextPieces
           .slice(-3)

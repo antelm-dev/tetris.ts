@@ -22,6 +22,13 @@ export const BIND_LABELS: Record<Bind, string> = {
   pause: 'Pause'
 }
 
+/** Visual grouping for the settings screen — purely presentational. */
+export const BIND_GROUPS: readonly { label: string; binds: readonly Bind[] }[] = [
+  { label: 'Movement', binds: ['left', 'right', 'softDrop', 'hardDrop'] },
+  { label: 'Rotation', binds: ['rotateRight', 'rotateLeft'] },
+  { label: 'Game', binds: ['hold', 'pause'] }
+]
+
 export type Keymap = Record<Bind, string[]>
 
 export const DEFAULT_KEYS: Keymap = {

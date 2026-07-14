@@ -12,7 +12,7 @@
     "dev": "concurrently -k -n vite,rollup -c blue,magenta \"vite\" \"rollup -c --environment NODE_ENV:development --watch\"",
     "build:renderer": "vite build",
     "build:main": "rollup -c --environment NODE_ENV:production",
-    "build": "pnpm clean && pnpm gen:ipc && pnpm typecheck && pnpm build:renderer && pnpm build:main",
+    "build": "pnpm clean && pnpm typecheck && pnpm build:renderer && pnpm build:main",
     "start": "electron .",
     "preview": "pnpm build && electron .",
     "typecheck:main": "tsc --noEmit -p tsconfig.main.json",

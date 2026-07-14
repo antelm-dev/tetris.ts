@@ -1,6 +1,6 @@
-import { app } from 'electron'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { app } from 'electron'
 import { createIpcHelpers, defineIpcModule } from 'electron-ipc-module'
 
 /**
@@ -16,18 +16,50 @@ type GameEvents = {
 
 const { handle } = createIpcHelpers<GameEvents>()
 
+/** Upper bound accepted from the renderer — finite, integral, non-negative. */
+export const MAX_SCORE = Number.MAX_SAFE_INTEGER
+
 const scoreFile = () => join(app.getPath('userData'), 'high-score.json')
 
-function readHighScore(): number {
+export function isValidScore(value: unknown): value is number {
+  return (
+    typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value) && value >= 0 && value <= MAX_SCORE
+  )
+}
+
+export function parseHighScorePayload(raw: string): number {
   try {
-    return (JSON.parse(readFileSync(scoreFile(), 'utf-8')) as { highScore?: number }).highScore ?? 0
+    const data: unknown = JSON.parse(raw)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return 0
+    const score = (data as { highScore?: unknown }).highScore
+    return isValidScore(score) ? score : 0
   } catch {
     return 0
   }
 }
 
-function writeHighScore(score: number): void {
-  writeFileSync(scoreFile(), JSON.stringify({ highScore: score }), 'utf-8')
+async function readHighScore(): Promise<number> {
+  try {
+    return parseHighScorePayload(await readFile(scoreFile(), 'utf-8'))
+  } catch {
+    return 0
+  }
+}
+
+async function writeHighScore(score: number): Promise<void> {
+  await writeFile(scoreFile(), JSON.stringify({ highScore: score }), 'utf-8')
+}
+
+/** Serialize score mutations so concurrent submits cannot race on the same file. */
+let writeChain: Promise<unknown> = Promise.resolve()
+
+function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(task, task)
+  writeChain = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
 }
 
 /**
@@ -36,12 +68,16 @@ function writeHighScore(score: number): void {
  */
 export const gameIpc = defineIpcModule('game', {
   'get-high-score': handle(async () => readHighScore()),
-  'submit-score': handle(async (event, score: number) => {
-    const best = readHighScore()
-    if (score <= best) return false
+  'submit-score': handle(async (event, score: unknown) => {
+    if (!isValidScore(score)) return false
 
-    writeHighScore(score)
-    event.sender.send('high-score-beaten', score)
-    return true
+    return enqueueWrite(async () => {
+      const best = await readHighScore()
+      if (score <= best) return false
+
+      await writeHighScore(score)
+      event.sender.send('high-score-beaten', score)
+      return true
+    })
   })
 })

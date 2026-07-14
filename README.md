@@ -126,6 +126,11 @@ pnpm build      # typecheck + vite build + rollup build
 pnpm start      # electron . (loads app://)
 ```
 
+`pnpm gen:ipc` regenerates the typed preload bridge; `pnpm typecheck` runs it
+once before the per-process checks, and the Rollup preload build also regenerates
+it via the `electron-ipc-module` plugin. Prefer `pnpm gen:ipc` on its own when you
+only need the bridge file.
+
 Lint and format (oxlint / oxfmt — configured in `.oxlintrc.json` and `.oxfmtrc.json`):
 
 ```bash
@@ -151,12 +156,17 @@ pnpm test:watch
 
 Tests live in `test/` and run in Node (no Electron binary needed):
 
-- **Game engine** — `Piece`, `Field`, `Game` as pure logic (including a
-  regression test for multi-line clears).
+- **Game engine** — `Piece`, `Field`, `Game` as pure logic (line clears, lock-out,
+  scoring, 7-bag determinism, gravity).
+- **Input timing** — DAS/ARR / soft-drop clocks and simultaneous left/right
+  resolution as pure helpers.
+- **Settings** — recovery from malformed or incomplete `localStorage` payloads.
 - **IPC modules** — the register functions are driven with a fake `ipcMain`
   (`test/ipc/fake-ipc.ts`); `electron` is aliased to a shared stub
   (`test/mocks/electron.ts`) in `vitest.config.ts` so the mock also covers the
-  imports inside the linked `electron-ipc-module`.
+  imports inside the linked `electron-ipc-module`. Score persistence rejects
+  invalid values and malformed on-disk JSON.
+- **External navigation** — `isAllowedExternalUrl` allowlists `https:` / `mailto:`.
 
 ## Packaging
 
@@ -196,6 +206,25 @@ no `node_modules`. That's also why `electron-ipc-module` and `p5` live in
 | Z / X | Rotate    |
 | Shift | Hold      |
 | P     | Pause     |
+
+## Scoring
+
+Guideline-style scoring (all values are integers):
+
+| Action | Points |
+| ------ | ------ |
+| Soft drop | 1 × cells |
+| Hard drop | 2 × cells |
+| Single / Double / Triple / Tetris | 100 / 300 / 500 / 800 × level |
+| Spin (no clear) | 100 × level |
+| Spin single / double / triple | 800 / 1200 / 1600 × level |
+| Back-to-back (Tetris or spin clear) | × 1.5 on the clear |
+| Combo | +50 × combo × level (from the 2nd clear in a run) |
+| Perfect clear (all clear) | +800 / 1200 / 1800 / 2000 × level (by lines cleared) |
+
+Back-to-back multiplies the line-clear score first; the combo bonus is then added
+on top so the two stack. Soft- and hard-drop points are awarded as the piece
+travels and are independent of clears.
 
 ## License
 

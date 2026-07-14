@@ -12,7 +12,7 @@ A 3D Tetris (p5.js / WebGL) running on Electron. It merges two things:
 - the **Tetris game** from `tetris.ts`, ported off `electron-vite` and inlined
   into the renderer (no workspace packages).
 
-It also dogfoods two local libraries (linked via Yarn `portal:`):
+It also dogfoods two local libraries (linked via pnpm `link:`):
 
 - **[electron-run](../electron-libs/electron-run)** — a Rollup plugin that
   relaunches Electron on every rebuild in watch mode.
@@ -64,7 +64,7 @@ renderer/
 resources/
   icon.png           # app icon (window + electron-builder)
 scripts/
-  gen-ipc.mjs        # standalone bridge generation (yarn gen:ipc)
+  gen-ipc.mjs        # standalone bridge generation (pnpm gen:ipc)
   clean.mjs
 test/                # vitest: game engine + IPC modules
 ```
@@ -80,7 +80,7 @@ export const systemIpc = defineIpcModule('system', {
 })
 ```
 
-`yarn gen:ipc` (also run automatically by the Rollup preload build) analyzes
+`pnpm gen:ipc` (also run automatically by the Rollup preload build) analyzes
 these files and writes a typed `main/generated/ipc-bridge.ts`. The main process
 loads the modules through a container, and the preload exposes the bridge:
 
@@ -115,38 +115,38 @@ through the generated `bridge.game.onHighScoreBeaten(...)` and shows as a banner
 ## Getting started
 
 ```bash
-yarn install
-yarn dev        # Vite + Rollup watch + Electron
+pnpm install
+pnpm dev        # Vite + Rollup watch + Electron
 ```
 
 Build and run the production bundle:
 
 ```bash
-yarn build      # typecheck + vite build + rollup build
-yarn start      # electron . (loads app://)
+pnpm build      # typecheck + vite build + rollup build
+pnpm start      # electron . (loads app://)
 ```
 
 Lint and format (oxlint / oxfmt — configured in `.oxlintrc.json` and `.oxfmtrc.json`):
 
 ```bash
-yarn lint           # oxlint
-yarn lint:fix       # oxlint --fix
-yarn format         # oxfmt, writes in place
-yarn format:check   # oxfmt --check (what CI runs)
+pnpm lint           # oxlint
+pnpm lint:fix       # oxlint --fix
+pnpm format         # oxfmt, writes in place
+pnpm format:check   # oxfmt --check (what CI runs)
 ```
 
-Other scripts: `yarn clean`, `yarn gen:ipc`, `yarn typecheck`, `yarn build:renderer`, `yarn build:main`.
+Other scripts: `pnpm clean`, `pnpm gen:ipc`, `pnpm typecheck`, `pnpm build:renderer`, `pnpm build:main`.
 
 > `electron-run` and `electron-ipc-module` are installed straight from GitHub
 > (`github:antelm-dev/...`). They ship no built `dist/` in git, so each has a
-> `prepare` script that compiles on install — `yarn install` clones and builds
+> `prepare` script that compiles on install — `pnpm install` clones and builds
 > them automatically. No local checkout of the libraries is needed.
 
 ## Testing
 
 ```bash
-yarn test         # vitest run
-yarn test:watch
+pnpm test         # vitest run
+pnpm test:watch
 ```
 
 Tests live in `test/` and run in Node (no Electron binary needed):
@@ -164,10 +164,22 @@ Distributables are built with [electron-builder](https://www.electron.build/)
 (config in `electron-builder.yml`):
 
 ```bash
-yarn pack:dir     # unpacked app in release/win-unpacked (no installer)
-yarn dist         # installer for the current OS
-yarn dist:win     # or :mac / :linux
+pnpm pack:dir       # unpacked app for the current OS (no installer)
+pnpm pack:win       # unpacked Windows app in release/win-unpacked
+pnpm pack:mac       # unpacked macOS app in release/mac (run on macOS)
+pnpm pack:linux     # unpacked Linux app in release/linux-unpacked
+pnpm dist           # installer for the current OS
+pnpm dist:win       # NSIS setup + portable exe (run on Windows)
+pnpm dist:mac       # DMG + zip (run on macOS)
+pnpm dist:linux     # AppImage + .deb (run on Linux)
 ```
+
+Cross-platform notes:
+
+- Windows (`nsis`, `portable`) — build on Windows.
+- macOS (`dmg`, `zip`) — build on macOS; `identity: null` keeps local builds unsigned.
+- Linux (`AppImage`, `.deb`) — build on Linux (`mksquashfs`, `fpm`). From other OSes,
+  `pnpm pack:linux` still produces `release/linux-unpacked` for inspection.
 
 Because Rollup bundles the main/preload and Vite bundles the renderer, the app
 ships only its built output (`dist-main`, `dist-renderer`) inside `app.asar` —

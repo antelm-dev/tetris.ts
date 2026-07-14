@@ -1,9 +1,10 @@
 import type P5 from 'p5'
-import { mix } from '../core/color'
+import { mix, type RGB } from '../core/color'
 import { hump, smooth } from '../core/ease'
 import { BIND_LABELS, BINDS, keyLabel } from '../config/keymap'
 import { settings } from '../config/settings'
-import { UI } from '../config/themes'
+import { PALETTE, UI } from '../config/themes'
+import type { PieceName } from '../engine'
 import { BAR, composite, ensureBuffer, FG, keycap, keycapWidth, MONO, PANEL, panel, RED, setTracking } from './widgets'
 
 /**
@@ -39,12 +40,38 @@ interface BannerState {
   appear: number // eased presence, 0 → 1
 }
 
+/** Draft filled by spin/clear/B2B/combo hooks in one push, flushed in update. */
+interface MoveDraft {
+  spin?: PieceName
+  lines: number
+  b2b: number
+  combo: number
+  dirty: boolean
+}
+
+interface MoveCallout {
+  title: string
+  sub: string
+  b2b: number
+  combo: number
+  color: RGB
+  life: number
+  appear: number
+  pop: number
+}
+
 interface LegendEntry {
   keys: string[]
   label: string
   keyW: number[]
   width: number
 }
+
+const GOLD: RGB = [255, 224, 130]
+const CYAN: RGB = [140, 235, 255]
+const LINE_LABELS = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'] as const
+
+const emptyDraft = (): MoveDraft => ({ lines: -1, b2b: 0, combo: 0, dirty: false })
 
 export class Ui {
   private g?: P5.Graphics
@@ -56,6 +83,17 @@ export class Ui {
   }
   private readonly overlay: OverlayState = { title: '', sub: '', kind: 'pause', shown: false, t: 0 }
   private readonly banner: BannerState = { text: '', life: 0, appear: 0 }
+  private draft = emptyDraft()
+  private readonly callout: MoveCallout = {
+    title: '',
+    sub: '',
+    b2b: 0,
+    combo: 0,
+    color: GOLD,
+    life: 0,
+    appear: 0,
+    pop: 0
+  }
   /** The controls legend is opt-in — Tab toggles it. `t` is its eased opacity. */
   private readonly legend = { shown: false, t: 0 }
 
@@ -95,6 +133,36 @@ export class Ui {
     this.banner.life = 2.5
   }
 
+  public announceSpin(name: PieceName, lines: number): void {
+    this.draft.spin = name
+    this.draft.lines = lines
+    this.draft.dirty = true
+  }
+
+  public announceClear(lines: number): void {
+    if (lines < 3) return
+    if (this.draft.lines < 0) this.draft.lines = lines
+    this.draft.dirty = true
+  }
+
+  public announceB2B(chain: number): void {
+    this.draft.b2b = chain
+    this.draft.dirty = true
+  }
+
+  public announceCombo(combo: number): void {
+    this.draft.combo = combo
+    this.draft.dirty = true
+  }
+
+  public clearMove(): void {
+    this.draft = emptyDraft()
+    this.callout.life = 0
+    this.callout.appear = 0
+    this.callout.pop = 0
+    this.callout.title = ''
+  }
+
   /** Show/hide the controls legend under the well. */
   public toggleLegend(): void {
     this.legend.shown = !this.legend.shown
@@ -102,6 +170,8 @@ export class Ui {
 
   // --- per-frame animation ---------------------------------------------------
   public update(dt: number): void {
+    if (this.draft.dirty) this.flushDraft()
+
     for (const key of Object.keys(this.stats) as StatKey[]) {
       const s = this.stats[key]
       if (s.bump > 0) s.bump = Math.max(0, s.bump - dt * 3.6)
@@ -120,6 +190,59 @@ export class Ui {
     } else {
       this.banner.appear = Math.max(0, this.banner.appear - dt * 6)
     }
+
+    if (this.callout.life > 0) {
+      this.callout.life -= dt
+      this.callout.appear = Math.min(1, this.callout.appear + dt * 8)
+    } else {
+      this.callout.appear = Math.max(0, this.callout.appear - dt * 5)
+    }
+    if (this.callout.pop > 0) this.callout.pop = Math.max(0, this.callout.pop - dt * 2.8)
+  }
+
+  private flushDraft(): void {
+    const { spin, lines, b2b, combo } = this.draft
+    this.draft = emptyDraft()
+
+    const special = !!spin || lines >= 3 || b2b > 0 || combo > 0
+    if (!special) return
+
+    let title = ''
+    let sub = ''
+    let color: RGB
+    let badgeB2b = b2b
+    let badgeCombo = combo
+
+    if (spin) {
+      title = `${spin}-SPIN`
+      sub = lines > 0 ? (LINE_LABELS[lines] ?? '') : ''
+      color = PALETTE[spin].glow
+    } else if (lines >= 4) {
+      title = 'TETRIS'
+      color = GOLD
+    } else if (lines === 3) {
+      title = 'TRIPLE'
+      color = mix(CYAN, FG, 0.15)
+    } else if (b2b > 0) {
+      title = 'B2B'
+      sub = `×${b2b}`
+      color = GOLD
+      badgeB2b = 0
+    } else {
+      title = 'COMBO'
+      sub = `×${combo}`
+      color = CYAN
+      badgeCombo = 0
+    }
+
+    this.callout.title = title
+    this.callout.sub = sub
+    this.callout.b2b = badgeB2b
+    this.callout.combo = badgeCombo
+    this.callout.color = color
+    this.callout.life = 2.2
+    this.callout.appear = Math.max(this.callout.appear, 0.15)
+    this.callout.pop = 1
   }
 
   // --- compositing -----------------------------------------------------------
@@ -198,6 +321,82 @@ export class Ui {
 
       y += ph + gap
     }
+
+    this.drawMoveCallout(g, pad, y, pw)
+  }
+
+  /** Special-move readout (T-spin, Tetris, B2B, combo) under the stats column. */
+  private drawMoveCallout(g: P5.Graphics, x: number, y: number, w: number): void {
+    const a = smooth(this.callout.appear)
+    if (a <= 0.004 || !this.callout.title) return
+
+    const c = this.callout
+    const pop = hump(c.pop)
+    const hasBadges = c.b2b > 0 || c.combo > 0
+    let h = 52
+    if (c.sub && hasBadges) h = 86
+    else if (c.sub) h = 68
+    else if (hasBadges) h = 72
+
+    g.push()
+    g.translate(x + (1 - a) * -18, y)
+    g.scale(1 + pop * 0.08)
+
+    panel(g, 0, 0, w, h, { r: 10, fill: PANEL, fillA: 220 * a, strokeA: 70 * a })
+
+    g.noStroke()
+    g.fill(c.color[0], c.color[1], c.color[2], 255 * a)
+    g.rect(0, 8, 3, h - 16, 2)
+
+    const dc = g.drawingContext as CanvasRenderingContext2D
+    g.push()
+    g.noStroke()
+    g.fill(c.color[0], c.color[1], c.color[2], 255 * a)
+    g.textAlign(g.LEFT, g.TOP)
+    g.textSize(c.title.length > 10 ? 12 : 14)
+    setTracking(g, 1.4)
+    dc.shadowColor = `rgba(${c.color[0]}, ${c.color[1]}, ${c.color[2]}, ${0.55 * a})`
+    dc.shadowBlur = 16 + pop * 10
+    g.text(c.title, 14, 12)
+    g.pop()
+
+    if (c.sub) {
+      g.noStroke()
+      g.fill(FG[0], FG[1], FG[2], 210 * a)
+      g.textAlign(g.LEFT, g.TOP)
+      g.textSize(11)
+      setTracking(g, 2)
+      g.text(c.sub, 14, 34)
+    }
+
+    if (hasBadges) {
+      let bx = 14
+      const by = c.sub ? 54 : 36
+      if (c.b2b > 0) bx = this.drawBadge(g, bx, by, `B2B ×${c.b2b}`, GOLD, a)
+      if (c.combo > 0) this.drawBadge(g, bx, by, `COMBO ×${c.combo}`, CYAN, a)
+    }
+
+    g.pop()
+  }
+
+  private drawBadge(g: P5.Graphics, x: number, y: number, label: string, color: RGB, a: number): number {
+    g.textSize(9)
+    setTracking(g, 0.8)
+    const tw = g.textWidth(label)
+    const bw = tw + 10
+    const bh = 16
+    g.noStroke()
+    g.fill(color[0], color[1], color[2], 40 * a)
+    g.rect(x, y, bw, bh, 4)
+    g.noFill()
+    g.stroke(color[0], color[1], color[2], 160 * a)
+    g.strokeWeight(1)
+    g.rect(x + 0.5, y + 0.5, bw - 1, bh - 1, 4)
+    g.noStroke()
+    g.fill(color[0], color[1], color[2], 240 * a)
+    g.textAlign(g.LEFT, g.CENTER)
+    g.text(label, x + 5, y + bh / 2 + 0.5)
+    return x + bw + 6
   }
 
   /**

@@ -17,7 +17,7 @@
     "unicorn/no-new-array": "off",
     "unicorn/require-module-specifiers": "off"
   },
-  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "release", ".yarn"],
+  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "release"],
   "overrides": [
     { "files": ["main/**/*.ts", "scripts/**/*.mjs", "*.config.*", "test/**/*.ts"], "env": { "node": true } },
     { "files": ["renderer/**/*.ts"], "env": { "browser": true } },

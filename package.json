@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Tetris in TypeScript on Electron",
   "license": "MIT",
-  "author": "Adel Terki",
+  "author": "Adel Terki <adel.terki2@outlook.fr>",
   "type": "module",
   "main": "dist-main/main.cjs",
   "scripts": {
@@ -12,24 +12,27 @@
     "dev": "concurrently -k -n vite,rollup -c blue,magenta \"vite\" \"rollup -c --environment NODE_ENV:development --watch\"",
     "build:renderer": "vite build",
     "build:main": "rollup -c --environment NODE_ENV:production",
-    "build": "yarn clean && yarn gen:ipc && yarn typecheck && yarn build:renderer && yarn build:main",
+    "build": "pnpm clean && pnpm gen:ipc && pnpm typecheck && pnpm build:renderer && pnpm build:main",
     "start": "electron .",
-    "preview": "yarn build && electron .",
+    "preview": "pnpm build && electron .",
     "typecheck:main": "tsc --noEmit -p tsconfig.main.json",
     "typecheck:preload": "tsc --noEmit -p tsconfig.preload.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json",
-    "typecheck": "yarn gen:ipc && yarn typecheck:main && yarn typecheck:preload && yarn typecheck:renderer",
+    "typecheck": "pnpm gen:ipc && pnpm typecheck:main && pnpm typecheck:preload && pnpm typecheck:renderer",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pack:dir": "yarn build && electron-builder --dir",
-    "dist": "yarn build && electron-builder",
-    "dist:win": "yarn build && electron-builder --win",
-    "dist:mac": "yarn build && electron-builder --mac",
-    "dist:linux": "yarn build && electron-builder --linux"
+    "pack:dir": "pnpm build && electron-builder --dir",
+    "pack:win": "pnpm build && electron-builder --win --dir",
+    "pack:mac": "pnpm build && electron-builder --mac --dir",
+    "pack:linux": "pnpm build && electron-builder --linux --dir",
+    "dist": "pnpm build && electron-builder",
+    "dist:win": "pnpm build && electron-builder --win",
+    "dist:mac": "pnpm build && electron-builder --mac",
+    "dist:linux": "pnpm build && electron-builder --linux"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.2",
@@ -44,8 +47,8 @@
     "dotenv": "^16.4.7",
     "electron": "^40.8.0",
     "electron-builder": "^26.0.12",
-    "electron-ipc-module": "portal:../electron-libs/ipc-module",
-    "electron-run": "portal:../electron-libs/electron-run",
+    "electron-ipc-module": "github:antelm-dev/electron-ipc-module#main",
+    "electron-run": "github:antelm-dev/electron-run#master",
     "oxfmt": "^0.58.0",
     "oxlint": "^1.73.0",
     "p5": "^1.11.3",
@@ -55,5 +58,15 @@
     "vite": "^7.1.7",
     "vitest": "^4.1.9"
   },
-  "packageManager": "yarn@4.12.0"
+  "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-ipc-module",
+      "electron-winstaller",
+      "esbuild",
+      "rollup-plugin-electron-run"
+    ]
+  },
+  "desktopName": "com.adelterki.tetris.desktop"
 }

@@ -38,6 +38,31 @@ export function drawBlock(p: P5, x: number, y: number, body: RGB, face: RGB, opt
   p.pop()
 }
 
+/**
+ * A glowing rectangular bezel frame around a `w`×`h` region centred at the
+ * current origin: four bars raised off the backplate, catching the key light.
+ * Shared by the well and the hold/next preview panels so their chrome reads
+ * as one system.
+ */
+function drawBezel(p: P5, w: number, h: number, thickness: number, depth: number, color: RGB): void {
+  p.push()
+  p.noStroke()
+  p.specularMaterial(120)
+  p.shininess(80)
+  p.fill(color[0], color[1], color[2])
+  const bar = (bx: number, by: number, bw: number, bh: number): void => {
+    p.push()
+    p.translate(bx, by, 0)
+    p.box(bw, bh, depth)
+    p.pop()
+  }
+  bar(0, -h / 2 - thickness / 2, w + thickness * 2, thickness)
+  bar(0, h / 2 + thickness / 2, w + thickness * 2, thickness)
+  bar(-w / 2 - thickness / 2, 0, thickness, h + thickness * 2)
+  bar(w / 2 + thickness / 2, 0, thickness, h + thickness * 2)
+  p.pop()
+}
+
 export function drawWell(p: P5): void {
   const w = COLS * CELL
   const h = ROWS * CELL
@@ -64,24 +89,7 @@ export function drawWell(p: P5): void {
   }
   p.pop()
 
-  // Glowing frame bezel.
-  p.push()
-  p.noStroke()
-  p.specularMaterial(120)
-  p.shininess(80)
-  p.fill(...INK.wellEdge)
-  const t = CELL * 0.34
-  const bar = (bx: number, by: number, bw: number, bh: number): void => {
-    p.push()
-    p.translate(bx, by, 0)
-    p.box(bw, bh, CELL * 0.6)
-    p.pop()
-  }
-  bar(0, -h / 2 - t / 2, w + t * 2, t)
-  bar(0, h / 2 + t / 2, w + t * 2, t)
-  bar(-w / 2 - t / 2, 0, t, h + t * 2)
-  bar(w / 2 + t / 2, 0, t, h + t * 2)
-  p.pop()
+  drawBezel(p, w, h, CELL * 0.34, CELL * 0.6, INK.wellEdge)
 }
 
 export function drawLockedField(p: P5, field: Field): void {
@@ -138,14 +146,21 @@ export function drawActive(p: P5, game: Game, visualX: number, visualY: number, 
 
 /** A hold / next-queue preview panel: a framed square with a piece in it. */
 export function drawPanel(p: P5, piece: Piece | undefined, centerX: number, centerY: number): void {
-  // Frame.
+  const size = CELL * 3.4
+
+  // Recessed backplate, matching the well's.
   p.push()
-  p.translate(centerX, centerY, -CELL * 0.3)
-  p.noFill()
-  p.stroke(INK.wellEdge[0], INK.wellEdge[1], INK.wellEdge[2], 120)
-  p.strokeWeight(1.5)
-  p.plane(CELL * 3.4, CELL * 3.4)
+  p.translate(centerX, centerY, -CELL * 0.42)
+  p.noStroke()
+  p.fill(...INK.wellFill)
+  p.box(size, size, CELL * 0.3)
   p.pop()
+
+  p.push()
+  p.translate(centerX, centerY, 0)
+  drawBezel(p, size, size, CELL * 0.12, CELL * 0.22, INK.wellEdge)
+  p.pop()
+
   if (!piece) return
   const pal = PALETTE[piece.name]
   const s = 0.62

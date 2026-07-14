@@ -1,6 +1,7 @@
 import { BINDS, normalizeKey, type Bind } from '../config/keymap'
 import { settings } from '../config/settings'
 import type { Game, Action } from '../engine'
+import { ARR, DAS, SOFT_DROP, resolveHorizontal, tickRepeat } from './timing'
 
 /** Game action each binding dispatches. */
 const ACTIONS: Record<Bind, Action> = {
@@ -16,10 +17,6 @@ const ACTIONS: Record<Bind, Action> = {
 
 /** Bindings that fire once per press; the rest auto-repeat while held. */
 const TAPS: ReadonlySet<Bind> = new Set<Bind>(['hardDrop', 'rotateRight', 'rotateLeft', 'hold', 'pause'])
-
-const DAS = 150 // ms before horizontal auto-shift kicks in
-const ARR = 38 // ms between auto-shifted steps
-const SOFT_DROP = 45 // ms between soft-drop steps
 
 /**
  * Frame-rate-independent input with real DAS/ARR timing. Taps are dispatched on
@@ -114,12 +111,7 @@ export class Input {
 
   /** Whichever horizontal direction is currently held (most recent wins ties). */
   private get currentHorizontal(): 'left' | 'right' | undefined {
-    const left = this.down.has('left')
-    const right = this.down.has('right')
-    if (left && right) return this.hLast // keep the most recent
-    if (left) return 'left'
-    if (right) return 'right'
-    return undefined
+    return resolveHorizontal(this.down.has('left'), this.down.has('right'), this.hLast)
   }
 
   /** Advance auto-repeat by `dt` seconds. Call once per rendered frame. */
@@ -128,21 +120,16 @@ export class Input {
 
     const dir = this.currentHorizontal
     if (dir) {
-      this.hTimer += ms
-      const threshold = this.hRepeating ? ARR : DAS
-      while (this.hTimer >= threshold) {
-        this.hTimer -= threshold
-        this.game.action(ACTIONS[dir])
-        this.hRepeating = true
-      }
+      const stepped = tickRepeat({ timer: this.hTimer, repeating: this.hRepeating }, ms, true, DAS, ARR)
+      this.hTimer = stepped.state.timer
+      this.hRepeating = stepped.state.repeating
+      for (let i = 0; i < stepped.fires; i++) this.game.action(ACTIONS[dir])
     }
 
     if (this.down.has('softDrop')) {
-      this.vTimer += ms
-      while (this.vTimer >= SOFT_DROP) {
-        this.vTimer -= SOFT_DROP
-        this.game.action('down')
-      }
+      const stepped = tickRepeat({ timer: this.vTimer, repeating: true }, ms, true, SOFT_DROP, SOFT_DROP)
+      this.vTimer = stepped.state.timer
+      for (let i = 0; i < stepped.fires; i++) this.game.action('down')
     }
   }
 }

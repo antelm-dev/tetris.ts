@@ -7,7 +7,9 @@ export const win = {
   minimize: vi.fn(),
   close: vi.fn(),
   setFullScreen: vi.fn(),
-  isFullScreen: vi.fn(() => false)
+  isFullScreen: vi.fn(() => false),
+  on: vi.fn(),
+  webContents: { send: vi.fn() }
 }
 
 export const BrowserWindow = {

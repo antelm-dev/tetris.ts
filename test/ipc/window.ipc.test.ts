@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { windowIpc } from '../../main/ipc/window.ipc'
+import { windowIpc, wireFullscreenEvents } from '../../main/ipc/window.ipc'
 import { createFakeIpc } from './fake-ipc'
 import { BrowserWindow, win } from '../mocks/electron'
 
@@ -8,6 +8,8 @@ const event = { sender: {} } as never
 beforeEach(() => {
   BrowserWindow.fromWebContents.mockReturnValue(win)
   win.isFullScreen.mockReturnValue(false)
+  win.on.mockClear()
+  win.webContents.send.mockClear()
 })
 
 describe('windowIpc', () => {
@@ -47,5 +49,21 @@ describe('windowIpc', () => {
     await windowIpc(ipc)
     BrowserWindow.fromWebContents.mockReturnValue(null as never)
     expect(() => listeners.get('window:minimize')!(event)).not.toThrow()
+  })
+
+  it('wireFullscreenEvents forwards enter/leave to the renderer', () => {
+    wireFullscreenEvents(win as never)
+
+    expect(win.on).toHaveBeenCalledWith('enter-full-screen', expect.any(Function))
+    expect(win.on).toHaveBeenCalledWith('leave-full-screen', expect.any(Function))
+
+    const enter = win.on.mock.calls.find(([name]) => name === 'enter-full-screen')![1] as () => void
+    const leave = win.on.mock.calls.find(([name]) => name === 'leave-full-screen')![1] as () => void
+
+    enter()
+    expect(win.webContents.send).toHaveBeenLastCalledWith('fullscreen-changed', true)
+
+    leave()
+    expect(win.webContents.send).toHaveBeenLastCalledWith('fullscreen-changed', false)
   })
 })

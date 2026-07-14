@@ -42,6 +42,11 @@ export interface GameEvents {
   onLock?: (hard: boolean) => void
   /** One or more rows were completed. `rows` are the (pre-collapse) indices. */
   onClear?: (rows: number[], count: number, level: number) => void
+  /**
+   * A clear emptied the well — all clear / perfect clear. `lines` is how many
+   * rows that clear removed; `level` is the level the bonus was scored at.
+   */
+  onPerfectClear?: (lines: number, level: number) => void
   /** The level increased. */
   onLevelUp?: (level: number) => void
   /** The active piece was stashed to hold. */

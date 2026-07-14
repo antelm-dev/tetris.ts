@@ -1,15 +1,36 @@
 import type P5 from 'p5'
 import { mix, type RGB } from '../core/color'
 import { hump, smooth } from '../core/ease'
+import { CELL, sidePanelTop, sidePanelX } from '../core/geometry'
 import { BIND_LABELS, BINDS, keyLabel } from '../config/keymap'
 import { settings } from '../config/settings'
 import { PALETTE, UI } from '../config/themes'
 import type { PieceName } from '../engine'
-import { BAR, composite, ensureBuffer, FG, keycap, keycapWidth, MONO, PANEL, panel, RED, setTracking } from './widgets'
+import { chromeScale, fitScale } from '../scene/camera'
+import {
+  BAR,
+  composite,
+  createToastQueue,
+  drawToast,
+  ensureBuffer,
+  FG,
+  keycap,
+  keycapWidth,
+  MONO,
+  panel,
+  panelLabel,
+  PANEL,
+  pushToast,
+  RED,
+  setTracking,
+  truncate,
+  updateToastQueue,
+  type ToastQueueState
+} from './widgets'
 
 /**
  * The game's chrome — score HUD, controls legend, pause/game-over overlay and
- * the notification banner — drawn entirely in p5 rather than as DOM elements.
+ * the notification toast — drawn entirely in p5 rather than as DOM elements.
  *
  * Everything is painted into an off-screen 2D graphics buffer each frame and
  * then composited over the WEBGL scene as a single unlit, depth-test-free image
@@ -34,18 +55,13 @@ interface OverlayState {
   t: number // eased opacity, 0 → 1
 }
 
-interface BannerState {
-  text: string
-  life: number // seconds remaining before it starts fading out
-  appear: number // eased presence, 0 → 1
-}
-
-/** Draft filled by spin/clear/B2B/combo hooks in one push, flushed in update. */
+/** Draft filled by spin/clear/B2B/combo/PC hooks in one push, flushed in update. */
 interface MoveDraft {
   spin?: PieceName
   lines: number
   b2b: number
   combo: number
+  perfectClear: boolean
   dirty: boolean
 }
 
@@ -71,7 +87,49 @@ const GOLD: RGB = [255, 224, 130]
 const CYAN: RGB = [140, 235, 255]
 const LINE_LABELS = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'] as const
 
-const emptyDraft = (): MoveDraft => ({ lines: -1, b2b: 0, combo: 0, dirty: false })
+const emptyDraft = (): MoveDraft => ({ lines: -1, b2b: 0, combo: 0, perfectClear: false, dirty: false })
+
+// --- compact HUD panel layout ------------------------------------------------
+const HUD_PAD = 16 // outer margin from the window edge
+const TITLEBAR_H = 34 // custom frameless titlebar in styles.css
+const HUD_MIN_W = 120
+const HUD_MAX_W = 220
+const HUD_PAD_IN = 12 // inner panel padding
+const HUD_PRIMARY_ROW_H = 42 // Score / Level row (label + big value)
+const HUD_ROW_GAP = 4
+const HUD_SECONDARY_ROW_H = 22 // Best · Lines row
+const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H * 2 + HUD_ROW_GAP * 2 + HUD_SECONDARY_ROW_H
+const HUD_CALLOUT_GAP = 8
+/** How much the value pulses on a change — reduced-motion drops this to 0. */
+const PULSE_SCALE_PRIMARY = 0.22
+const PULSE_SCALE_SECONDARY = 0.12
+/** Half the `drawPanel` frame's `CELL*3.4` plane — keeps the HUD clear of the hold panel. */
+const SIDE_PANEL_HALF = CELL * 1.7
+const SIDE_PANEL_LABEL_GAP = 14
+
+const START_HINT_HOLD = 4.5
+const START_HINT_TEXT = 'TAB CONTROLS  ·  ESC PAUSE'
+
+/** Titlebar is hidden in fullscreen (see `body.is-fullscreen` in styles.css). */
+function titlebarClearance(): number {
+  return document.body.classList.contains('is-fullscreen') ? 0 : TITLEBAR_H
+}
+
+/** Top edge for top-anchored chrome — clears the titlebar when it is visible. */
+function chromeTop(): number {
+  return titlebarClearance() + HUD_PAD
+}
+
+/**
+ * Local width of the compact HUD at `chromeScale` 1. Widest local size that
+ * still keeps the scaled panel clear of the hold frame.
+ */
+function hudLocalWidth(p: P5, scale: number): number {
+  const s = fitScale(p)
+  const holdFrameLeftX = p.width / 2 - (sidePanelX() + SIDE_PANEL_HALF) * s
+  const maxScreenW = holdFrameLeftX - HUD_PAD * 2
+  return Math.max(HUD_MIN_W, Math.min(HUD_MAX_W, maxScreenW / scale))
+}
 
 export class Ui {
   private g?: P5.Graphics
@@ -82,7 +140,9 @@ export class Ui {
     lines: { label: 'Lines', value: '0', bump: 0 }
   }
   private readonly overlay: OverlayState = { title: '', sub: '', kind: 'pause', shown: false, t: 0 }
-  private readonly banner: BannerState = { text: '', life: 0, appear: 0 }
+  private readonly toasts: ToastQueueState = createToastQueue()
+  /** The one-shot "Tab controls · Esc pause" hint shown at the start of a run. */
+  private readonly startHint = { life: 0, appear: 0 }
   private draft = emptyDraft()
   private readonly callout: MoveCallout = {
     title: '',
@@ -129,8 +189,22 @@ export class Ui {
     this.overlay.shown = false
   }
   public showBanner(text: string): void {
-    this.banner.text = text
-    this.banner.life = 2.5
+    pushToast(this.toasts, text, { tone: 'accent' })
+  }
+
+  /**
+   * Show the brief "Tab controls · Esc pause" hint. Called once per run (from
+   * `onStart`), so it never repeats mid-run. With `persistentHints` on it
+   * simply doesn't fade — `Infinity - dt` stays `Infinity`, so no branch is
+   * needed in `update()`.
+   */
+  public showStartHint(): void {
+    this.startHint.life = settings.persistentHints ? Infinity : START_HINT_HOLD
+  }
+
+  /** Dismiss the start hint early — called when the full controls legend opens. */
+  public dismissStartHint(): void {
+    this.startHint.life = 0
   }
 
   public announceSpin(name: PieceName, lines: number): void {
@@ -152,6 +226,12 @@ export class Ui {
 
   public announceCombo(combo: number): void {
     this.draft.combo = combo
+    this.draft.dirty = true
+  }
+
+  public announcePerfectClear(lines: number): void {
+    this.draft.perfectClear = true
+    if (this.draft.lines < 0) this.draft.lines = lines
     this.draft.dirty = true
   }
 
@@ -184,11 +264,13 @@ export class Ui {
     this.legend.t += (legendTarget - this.legend.t) * (1 - Math.exp(-dt * 14))
     if (!this.legend.shown && this.legend.t < 0.004) this.legend.t = 0
 
-    if (this.banner.life > 0) {
-      this.banner.life -= dt
-      this.banner.appear = Math.min(1, this.banner.appear + dt * 6)
+    updateToastQueue(this.toasts, dt)
+
+    if (this.startHint.life > 0) {
+      this.startHint.life -= dt
+      this.startHint.appear = Math.min(1, this.startHint.appear + dt * 6)
     } else {
-      this.banner.appear = Math.max(0, this.banner.appear - dt * 6)
+      this.startHint.appear = Math.max(0, this.startHint.appear - dt * 6)
     }
 
     if (this.callout.life > 0) {
@@ -201,10 +283,10 @@ export class Ui {
   }
 
   private flushDraft(): void {
-    const { spin, lines, b2b, combo } = this.draft
+    const { spin, lines, b2b, combo, perfectClear } = this.draft
     this.draft = emptyDraft()
 
-    const special = !!spin || lines >= 3 || b2b > 0 || combo > 0
+    const special = perfectClear || !!spin || lines >= 3 || b2b > 0 || combo > 0
     if (!special) return
 
     let title = ''
@@ -213,7 +295,11 @@ export class Ui {
     let badgeB2b = b2b
     let badgeCombo = combo
 
-    if (spin) {
+    if (perfectClear) {
+      title = 'ALL CLEAR'
+      sub = spin ? `${spin}-SPIN` : lines > 0 ? (LINE_LABELS[lines] ?? '') : ''
+      color = GOLD
+    } else if (spin) {
       title = `${spin}-SPIN`
       sub = lines > 0 ? (LINE_LABELS[lines] ?? '') : ''
       color = PALETTE[spin].glow
@@ -255,10 +341,12 @@ export class Ui {
     g.clear(0, 0, 0, 0)
     g.textFont(MONO)
     this.drawVignette(g, w, h)
-    this.drawHud(g)
-    this.drawLegend(g, w, h)
-    this.drawOverlay(g, w, h)
-    this.drawBanner(g, w, h)
+    this.drawHud(g, p)
+    this.drawSidePanelLabels(g, p)
+    this.drawStartHint(g, p)
+    this.drawLegend(g, p)
+    this.drawOverlay(g, p)
+    drawToast(g, w, this.toasts.active, UI.accent, h * 0.34)
     setTracking(g, 0) // don't leak spacing into the next frame
 
     composite(p, g)
@@ -280,52 +368,138 @@ export class Ui {
     g.pop()
   }
 
-  private drawHud(g: P5.Graphics): void {
+  /** One compact panel — Score/Level primary, Best/Lines secondary — near the well. */
+  private drawHud(g: P5.Graphics, p: P5): void {
     const accent = UI.accent
-    const pad = 16
-    const pw = 116
-    const ph = 54
-    const gap = 12
-    let y = 50 // clears the 34px titlebar, like the old CSS
-    const order: StatKey[] = ['score', 'best', 'level', 'lines']
-    for (const key of order) {
-      const s = this.stats[key]
-      // Fairly opaque: without a CSS backdrop-blur, a translucent panel would
-      // let the busy 3D scene behind bleed through and muddy the readout.
-      panel(g, pad, y, pw, ph, { r: 10, fill: PANEL, fillA: 210, strokeA: 60 })
+    const scale = chromeScale(p)
+    const w = hudLocalWidth(p, scale)
 
-      g.push()
-      g.noStroke()
-      g.fill(FG[0], FG[1], FG[2], 128)
-      g.textAlign(g.LEFT, g.TOP)
-      g.textSize(10)
-      setTracking(g, 2.2)
-      g.text(s.label.toUpperCase(), pad + 14, y + 9)
-      g.pop()
+    g.push()
+    g.translate(HUD_PAD, chromeTop())
+    g.scale(scale)
 
-      const b = hump(s.bump)
-      const col = mix(FG, accent, b)
-      g.push()
-      g.noStroke()
-      g.fill(col[0], col[1], col[2])
-      g.textAlign(g.LEFT, g.BASELINE)
-      g.textSize(24)
-      setTracking(g, 0)
-      const dc = g.drawingContext as CanvasRenderingContext2D
-      dc.shadowColor = `rgba(${accent[0]}, ${accent[1]}, ${accent[2]}, 0.35)`
-      dc.shadowBlur = 14
-      g.translate(pad + 14, y + ph - 12)
-      g.scale(1 + b * 0.28)
-      g.text(s.value, 0, 0)
-      g.pop()
+    panel(g, 0, 0, w, HUD_PANEL_H, { r: 12, fill: PANEL, fillA: 214, strokeA: 64 })
 
-      y += ph + gap
-    }
+    const innerW = w - HUD_PAD_IN * 2
+    let ry = HUD_PAD_IN
+    ry = this.drawPrimaryStat(g, this.stats.score, HUD_PAD_IN, ry, innerW, accent) + HUD_ROW_GAP
+    ry = this.drawPrimaryStat(g, this.stats.level, HUD_PAD_IN, ry, innerW, accent) + HUD_ROW_GAP
+    this.drawSecondaryRow(g, HUD_PAD_IN, ry, innerW, accent)
 
-    this.drawMoveCallout(g, pad, y, pw)
+    this.drawMoveCallout(g, 0, HUD_PANEL_H + HUD_CALLOUT_GAP, w)
+    g.pop()
   }
 
-  /** Special-move readout (T-spin, Tetris, B2B, combo) under the stats column. */
+  /** A large Score/Level row. Returns the y just past it, so callers can stack rows. */
+  private drawPrimaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): number {
+    g.push()
+    g.noStroke()
+    g.fill(FG[0], FG[1], FG[2], 128)
+    g.textAlign(g.LEFT, g.TOP)
+    g.textSize(10)
+    setTracking(g, 2.2)
+    g.text(s.label.toUpperCase(), x, y)
+    g.pop()
+
+    const b = hump(s.bump)
+    const col = mix(FG, accent, b)
+    const scale = 1 + (settings.reducedMotionActive ? 0 : b * PULSE_SCALE_PRIMARY)
+    g.push()
+    g.noStroke()
+    g.fill(col[0], col[1], col[2])
+    g.textAlign(g.LEFT, g.BASELINE)
+    g.textSize(22)
+    setTracking(g, 0)
+    const value = truncate(g, s.value, w)
+    const dc = g.drawingContext as CanvasRenderingContext2D
+    dc.shadowColor = `rgba(${accent[0]}, ${accent[1]}, ${accent[2]}, 0.35)`
+    dc.shadowBlur = 12
+    g.translate(x, y + HUD_PRIMARY_ROW_H - 4)
+    g.scale(scale)
+    g.text(value, 0, 0)
+    g.pop()
+
+    return y + HUD_PRIMARY_ROW_H
+  }
+
+  /** Best + Lines, side by side, dimmer and smaller — secondary information. */
+  private drawSecondaryRow(g: P5.Graphics, x: number, y: number, w: number, accent: RGB): void {
+    const colGap = 12
+    const colW = (w - colGap) / 2
+    this.drawSecondaryStat(g, this.stats.best, x, y, colW, accent)
+    this.drawSecondaryStat(g, this.stats.lines, x + colW + colGap, y, colW, accent)
+  }
+
+  private drawSecondaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): void {
+    g.push()
+    g.noStroke()
+    g.fill(FG[0], FG[1], FG[2], 105)
+    g.textAlign(g.LEFT, g.TOP)
+    g.textSize(9)
+    setTracking(g, 1.8)
+    g.text(s.label.toUpperCase(), x, y)
+    g.pop()
+
+    const b = hump(s.bump)
+    const col = mix(FG, accent, b)
+    const scale = 1 + (settings.reducedMotionActive ? 0 : b * PULSE_SCALE_SECONDARY)
+    g.push()
+    g.noStroke()
+    g.fill(col[0], col[1], col[2], 220)
+    g.textAlign(g.LEFT, g.TOP)
+    g.textSize(12)
+    setTracking(g, 0)
+    const value = truncate(g, s.value, w)
+    g.translate(x, y + 9)
+    g.scale(scale)
+    g.text(value, 0, 0)
+    g.pop()
+  }
+
+  /**
+   * "HOLD" / "NEXT" labels above the WEBGL side panels. The panels live in
+   * world space (see `sketch.ts`); this projects their approximate screen
+   * position with the same `fitScale` the camera uses, ignoring the small
+   * tilt/sway — imperceptible for a label a few px above a panel.
+   */
+  private drawSidePanelLabels(g: P5.Graphics, p: P5): void {
+    const s = fitScale(p)
+    const cx = p.width / 2
+    const cy = p.height / 2
+    const labelY = cy + sidePanelTop() * s - SIDE_PANEL_HALF * s - Math.max(10, SIDE_PANEL_LABEL_GAP * s)
+    const holdX = cx - sidePanelX() * s
+    const nextX = cx + sidePanelX() * s
+    // HOLD is the one actionable slot — accent-tinted; NEXT is a passive queue.
+    panelLabel(g, 'HOLD', holdX, labelY, UI.accent, 0.9)
+    panelLabel(g, 'NEXT', nextX, labelY, FG, 0.55)
+  }
+
+  /** Non-blocking, one-shot control hint shown at the start of a run. */
+  private drawStartHint(g: P5.Graphics, p: P5): void {
+    const a = smooth(this.startHint.appear)
+    if (a <= 0.004) return
+    const scale = chromeScale(p)
+    g.textSize(11)
+    setTracking(g, 1.4)
+    const tw = g.textWidth(START_HINT_TEXT)
+    const bw = tw + 36
+    const bh = 30
+
+    g.push()
+    g.translate(p.width / 2, chromeTop() + bh / 2)
+    g.scale(scale)
+    g.noStroke()
+    g.fill(BAR[0], BAR[1], BAR[2], 160 * a)
+    g.rect(-bw / 2, -bh / 2, bw, bh, bh / 2)
+    g.fill(FG[0], FG[1], FG[2], 205 * a)
+    g.textAlign(g.CENTER, g.CENTER)
+    g.textSize(11)
+    setTracking(g, 1.4)
+    g.text(START_HINT_TEXT, 0, 0.5)
+    g.pop()
+  }
+
+  /** Special-move readout (all clear, T-spin, Tetris, B2B, combo) under the stats panel. */
   private drawMoveCallout(g: P5.Graphics, x: number, y: number, w: number): void {
     const a = smooth(this.callout.appear)
     if (a <= 0.004 || !this.callout.title) return
@@ -404,9 +578,12 @@ export class Ui {
    * settings screen shows up here on the very next frame. Hidden until the
    * player asks for it with Tab (see {@link toggleLegend}).
    */
-  private drawLegend(g: P5.Graphics, w: number, h: number): void {
+  private drawLegend(g: P5.Graphics, p: P5): void {
     const a = smooth(this.legend.t)
     if (a <= 0.004) return
+    const scale = chromeScale(p)
+    const w = p.width
+    const h = p.height
     const keyH = 18
     const kGap = 6
     const labelGap = 6
@@ -430,8 +607,8 @@ export class Ui {
     })
     if (entries.length === 0) return
 
-    // Greedily pack entries into rows that fit the window width.
-    const maxRowW = w - 40 - padX * 2
+    // Greedily pack entries into rows that fit the window width (in local space).
+    const maxRowW = w / scale - 40 - padX * 2
     const rows: LegendEntry[][] = []
     let cur: LegendEntry[] = []
     let curW = 0
@@ -450,14 +627,14 @@ export class Ui {
     const rowWidths = rows.map((r) => r.reduce((a, e) => a + e.width, 0) + entryGap * (r.length - 1))
     const containerW = Math.max(...rowWidths) + padX * 2
     const containerH = rows.length * rowH + (rows.length - 1) * rowGap + padY * 2
-    const cx = w / 2
-    const top = h - 14 - containerH
-    const left = cx - containerW / 2
 
     // The whole legend fades and slides in as one, so `a` scales every alpha.
     g.push()
-    g.translate(0, (1 - a) * 12)
-    panel(g, left, top, containerW, containerH, {
+    g.translate(w / 2, h - 14)
+    g.scale(scale)
+    g.translate(0, settings.reducedMotionActive ? 0 : (1 - a) * 12)
+    g.translate(-containerW / 2, -containerH)
+    panel(g, 0, 0, containerW, containerH, {
       r: 12,
       fill: BAR,
       fillA: 140 * a,
@@ -465,9 +642,9 @@ export class Ui {
     })
 
     ;(g.drawingContext as CanvasRenderingContext2D).globalAlpha = 0.82 * a
-    let ry = top + padY
+    let ry = padY
     rows.forEach((row, i) => {
-      let rx = cx - rowWidths[i] / 2
+      let rx = (containerW - rowWidths[i]) / 2
       for (const e of row) {
         e.keys.forEach((k, ki) => {
           const kw = e.keyW[ki]
@@ -488,10 +665,14 @@ export class Ui {
     g.pop()
   }
 
-  private drawOverlay(g: P5.Graphics, w: number, h: number): void {
+  private drawOverlay(g: P5.Graphics, p: P5): void {
     const a = this.overlay.t
     if (a <= 0.004) return
     const titleCol = this.overlay.kind === 'over' ? RED : UI.accent
+    const rm = settings.reducedMotionActive
+    const w = p.width
+    const h = p.height
+    const scale = chromeScale(p)
 
     g.push()
     g.noStroke()
@@ -510,8 +691,8 @@ export class Ui {
 
     g.push()
     g.translate(w / 2, h / 2)
-    g.scale(0.96 + 0.04 * a)
-    g.translate(0, (1 - a) * 8)
+    g.scale(scale * (rm ? 1 : 0.96 + 0.04 * a))
+    g.translate(0, rm ? 0 : (1 - a) * 8)
 
     panel(g, -cardW / 2, -cardH / 2, cardW, cardH, {
       r: 16,
@@ -541,42 +722,6 @@ export class Ui {
       setTracking(g, 1)
       g.text(this.overlay.sub, -0.5, 26)
     }
-    g.pop()
-  }
-
-  private drawBanner(g: P5.Graphics, w: number, h: number): void {
-    const a = smooth(this.banner.appear)
-    if (a <= 0.004 || !this.banner.text) return
-    const accent = UI.accent
-    const text = this.banner.text.toUpperCase()
-
-    g.textSize(20)
-    setTracking(g, 2)
-    const tw = g.textWidth(text)
-    const bw = tw + 52
-    const bh = 48
-
-    g.push()
-    g.translate(w / 2, h * 0.34)
-    g.scale(0.9 + 0.1 * a)
-
-    g.noStroke()
-    g.fill(0, 0, 0, 0.72 * 255 * a)
-    g.rect(-bw / 2, -bh / 2, bw, bh, 10)
-    g.noFill()
-    g.stroke(accent[0], accent[1], accent[2], 255 * a)
-    g.strokeWeight(2)
-    g.rect(-bw / 2, -bh / 2, bw, bh, 10)
-
-    const dc = g.drawingContext as CanvasRenderingContext2D
-    g.noStroke()
-    g.fill(accent[0], accent[1], accent[2], 255 * a)
-    g.textAlign(g.CENTER, g.CENTER)
-    g.textSize(20)
-    setTracking(g, 2)
-    dc.shadowColor = `rgba(${accent[0]}, ${accent[1]}, ${accent[2]}, ${0.5 * a})`
-    dc.shadowBlur = 20
-    g.text(text, -1, 0)
     g.pop()
   }
 }

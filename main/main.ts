@@ -4,10 +4,11 @@ import { extname, isAbsolute, relative, resolve } from 'node:path'
 import { createIpcContainer } from 'electron-ipc-module'
 import { prepare } from './core/bootstrap.js'
 import { createCustomScheme } from './core/electron.js'
+import { isAllowedExternalUrl } from './core/external-url.js'
 import { env } from './env.js'
 import { gameIpc } from './ipc/game.ipc.js'
 import { systemIpc } from './ipc/system.ipc.js'
-import { windowIpc } from './ipc/window.ipc.js'
+import { windowIpc, wireFullscreenEvents } from './ipc/window.ipc.js'
 
 const scheme = createCustomScheme(env.scheme, {
   standard: true,
@@ -44,7 +45,7 @@ async function serveClient(request: Request): Promise<Response> {
 
   let requested: string
   try {
-    requested = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.replace(/^\/+/, ''))
+    requested = pathname === '/' ? 'index.electron.html' : decodeURIComponent(pathname.replace(/^\/+/, ''))
   } catch {
     // Malformed percent-encoding.
     return new Response('Bad request', { status: 400 })
@@ -89,9 +90,10 @@ function createWindow(): BrowserWindow {
   })
 
   win.once('ready-to-show', () => win.show())
+  wireFullscreenEvents(win)
 
   win.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url)
+    if (isAllowedExternalUrl(details.url)) void shell.openExternal(details.url)
     return { action: 'deny' }
   })
 

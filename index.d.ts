@@ -2,7 +2,7 @@ export {}
 
 declare global {
   interface Window {
-    electron: {
+    electron?: {
       bridge: typeof import('./main/generated/ipc-bridge.js').bridge
     }
   }

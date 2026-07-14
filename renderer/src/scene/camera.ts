@@ -24,6 +24,19 @@ export function fitScale(p: P5): number {
   return Math.min(p.width / contentW, p.height / contentH) * 0.96
 }
 
+/** Default Electron window size — chrome is authored against this. */
+const CHROME_REF_W = 1024
+const CHROME_REF_H = 768
+
+/**
+ * Mild scale for 2D HUD chrome relative to the default window. Grows slower
+ * than the 3D `fitScale` so the score panel tracks the board without ballooning.
+ */
+export function chromeScale(p: Pick<P5, 'width' | 'height'>): number {
+  const raw = Math.min(p.width / CHROME_REF_W, p.height / CHROME_REF_H)
+  return Math.min(1.28, Math.max(0.92, 1 + (raw - 1) * 0.55))
+}
+
 /** Set up the orthographic projection. Call once per frame, before drawing. */
 export function applyProjection(p: P5): void {
   p.ortho(-p.width / 2, p.width / 2, -p.height / 2, p.height / 2, -3000, 3000)

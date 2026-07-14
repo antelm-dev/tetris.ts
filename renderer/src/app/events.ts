@@ -1,5 +1,6 @@
 import type { RGB } from '../core/color'
 import { cellToWorld, CELL, COLS } from '../core/geometry'
+import { settings } from '../config/settings'
 import { PALETTE } from '../config/themes'
 import type { Game } from '../engine'
 import type { Effects } from '../scene/effects'
@@ -26,6 +27,16 @@ export interface Presentation {
 export function wireEvents(game: Game, view: Presentation): void {
   const { fx, ui, flashes, motion, gravity, scores } = view
 
+  // Comfort-setting multipliers live at this seam rather than inside `Effects`
+  // itself, so its API stays untouched: reduced motion zeroes shake entirely
+  // (not just dampens it), and the effects-intensity slider scales particle
+  // counts rather than each burst's own tuning.
+  const shake = (amount: number): void => fx.shake(amount * settings.shakeMultiplier)
+  const burst = (x: number, y: number, count: number, color: RGB, spread?: number): void =>
+    fx.burst(x, y, Math.round(count * settings.effectsIntensity), color, spread)
+  const line = (y: number, halfWidth: number, color: RGB, count?: number): void =>
+    fx.line(y, halfWidth, color, count === undefined ? undefined : Math.round(count * settings.effectsIntensity))
+
   game.events = {
     onSpawn: () => motion.onSpawn(),
 
@@ -39,9 +50,9 @@ export function wireEvents(game: Game, view: Presentation): void {
       if (ap) {
         const c = centroid(pieceCells(ap))
         const { x, y } = cellToWorld(c.col, c.row)
-        fx.burst(x, y, 18, PALETTE[name].glow, 300)
+        burst(x, y, 18, PALETTE[name].glow, 300)
       }
-      fx.shake(0.4)
+      shake(0.4)
       ui.setScore(game.score) // a spin scores even with no line clear
       ui.announceSpin(name, lines)
     },
@@ -53,9 +64,10 @@ export function wireEvents(game: Game, view: Presentation): void {
         flashes.lock(cells)
         const bottom = cells.reduce((m, c) => Math.max(m, c.row), 0)
         const { x, y } = cellToWorld(centroid(cells).col, bottom)
-        fx.burst(x, y, hard ? 22 : 10, PALETTE[ap.name].glow, hard ? 260 : 150)
+        burst(x, y, hard ? 22 : 10, PALETTE[ap.name].glow, hard ? 260 : 150)
       }
-      fx.shake(hard ? 0.5 : 0.22)
+      shake(hard ? 0.5 : 0.22)
+      ui.setScore(game.score)
     },
 
     onClear: (rows, count, level) => {
@@ -63,15 +75,23 @@ export function wireEvents(game: Game, view: Presentation): void {
         flashes.clear(r)
         const { y } = cellToWorld(0, r)
         const tint: RGB = count >= 4 ? [255, 230, 120] : [180, 240, 255]
-        fx.line(y, (COLS * CELL) / 2, tint, 40 + count * 8)
+        line(y, (COLS * CELL) / 2, tint, 40 + count * 8)
       }
       // Trauma scales with the row count, so a Tetris hits four times as hard
       // as a single instead of the near-flat curve a large base term gives.
-      fx.shake(count * 0.22)
+      shake(count * 0.22)
       ui.setScore(game.score)
       ui.setLines(game.lines)
       ui.setLevel(level)
       ui.announceClear(count)
+    },
+
+    onPerfectClear: (lines) => {
+      const gold: RGB = [255, 224, 130]
+      burst(0, 0, 48, gold, 420)
+      shake(0.75)
+      ui.setScore(game.score)
+      ui.announcePerfectClear(lines)
     },
 
     onB2B: (chain) => {
@@ -79,8 +99,8 @@ export function wireEvents(game: Game, view: Presentation): void {
       // scaled up slightly as the chain grows.
       const gold: RGB = [255, 224, 130]
       const mag = Math.min(1.5, 0.6 + chain * 0.12)
-      fx.burst(0, 0, 24, gold, 340 * mag)
-      fx.shake(0.4 + Math.min(0.4, chain * 0.06))
+      burst(0, 0, 24, gold, 340 * mag)
+      shake(0.4 + Math.min(0.4, chain * 0.06))
       ui.setScore(game.score)
       ui.announceB2B(chain)
     },
@@ -88,8 +108,8 @@ export function wireEvents(game: Game, view: Presentation): void {
     onCombo: (combo) => {
       // A quick cyan spark burst that grows with the combo, plus a nudge.
       const cyan: RGB = [140, 235, 255]
-      fx.burst(0, 0, 8 + combo * 2, cyan, 180 + combo * 30)
-      fx.shake(0.15 + Math.min(0.35, combo * 0.05))
+      burst(0, 0, 8 + combo * 2, cyan, 180 + combo * 30)
+      shake(0.15 + Math.min(0.35, combo * 0.05))
       ui.setScore(game.score)
       ui.announceCombo(combo + 1)
     },
@@ -97,13 +117,18 @@ export function wireEvents(game: Game, view: Presentation): void {
     onLevelUp: (level) => ui.setLevel(level),
 
     onGameOver: (score) => {
-      fx.shake(0.8)
+      shake(0.8)
       ui.showOverlay('Game Over', `Score ${score} · Space to replay · M for menu`, 'over')
       // `submit` persists in the main process and reports whether it beat the
       // stored record, in which case the Best stat updates immediately.
-      void scores?.submit(score).then((isRecord) => {
-        if (isRecord) ui.setBest(score)
-      })
+      void scores
+        ?.submit(score)
+        .then((isRecord) => {
+          if (isRecord) ui.setBest(score)
+        })
+        .catch(() => {
+          // Persistence is optional — a bridge/fs failure must not reject unhandled.
+        })
     },
 
     onPause: (paused) => {
@@ -119,6 +144,7 @@ export function wireEvents(game: Game, view: Presentation): void {
       ui.setLevel(1)
       ui.clearMove()
       ui.hideOverlay()
+      ui.showStartHint()
     }
   }
 }

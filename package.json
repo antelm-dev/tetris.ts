@@ -9,12 +9,17 @@
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "gen:ipc": "node scripts/gen-ipc.mjs",
-    "dev": "concurrently -k -n vite,rollup -c blue,magenta \"vite\" \"rollup -c --environment NODE_ENV:development --watch\"",
-    "build:renderer": "vite build",
+    "dev": "concurrently -k -n vite,rollup -c blue,magenta \"vite --mode electron\" \"rollup -c --environment NODE_ENV:development --watch\"",
+    "dev:web": "concurrently -k -n vite,server -c blue,green \"vite --mode web\" \"node server/index.mjs\"",
+    "build:renderer": "vite build --mode electron",
+    "build:renderer:web": "vite build --mode web",
     "build:main": "rollup -c --environment NODE_ENV:production",
-    "build": "pnpm clean && pnpm gen:ipc && pnpm typecheck && pnpm build:renderer && pnpm build:main",
+    "build": "pnpm clean && pnpm typecheck && pnpm build:renderer && pnpm build:main",
+    "build:web": "pnpm clean && pnpm gen:ipc && pnpm typecheck:renderer && pnpm build:renderer:web",
     "start": "electron .",
     "preview": "pnpm build && electron .",
+    "serve:web": "node server/index.mjs",
+    "preview:web": "pnpm build:web && pnpm serve:web",
     "typecheck:main": "tsc --noEmit -p tsconfig.main.json",
     "typecheck:preload": "tsc --noEmit -p tsconfig.preload.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json",
@@ -33,6 +38,9 @@
     "dist:win": "pnpm build && electron-builder --win",
     "dist:mac": "pnpm build && electron-builder --mac",
     "dist:linux": "pnpm build && electron-builder --linux"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.2",

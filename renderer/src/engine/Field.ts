@@ -1,6 +1,12 @@
 import type { Direction, Slot } from './types'
 import type Piece from './Piece'
 
+export type PlaceResult = {
+  cleared: number
+  /** True when any occupied cell of the locked piece sits above the visible well. */
+  lockOut: boolean
+}
+
 export default class Field {
   private _slots: Slot[][]
 
@@ -97,15 +103,26 @@ export default class Field {
     return this.collides(probe)
   }
 
-  public placePiece(piece: Piece): number {
+  /**
+   * Write `piece` into the well and collapse any completed rows.
+   *
+   * Cells with a negative row are a lock-out: they are never written (indexing
+   * above the board would throw), and {@link PlaceResult.lockOut} is set so the
+   * game can end cleanly. On-board cells still place and clear as usual.
+   */
+  public placePiece(piece: Piece): PlaceResult {
     const indexes = new Set<number>()
+    let lockOut = false
     piece.shape.forEach((row, i) => {
       const k = piece.y + i
       row.forEach((cell, j) => {
-        if (cell) {
-          this._slots[k][piece.x + j] = piece.name
-          indexes.add(k)
+        if (!cell) return
+        if (k < 0) {
+          lockOut = true
+          return
         }
+        this._slots[k][piece.x + j] = piece.name
+        indexes.add(k)
       })
     })
     // Clear top-to-bottom (ascending): clearRow unshifts a new row at the top,
@@ -114,7 +131,12 @@ export default class Field {
     const fullRows = [...indexes].filter((i) => this._slots[i].every((v) => v)).sort((a, b) => a - b)
     this.lastCleared = fullRows
     for (const i of fullRows) this.clearRow(i)
-    return fullRows.length
+    return { cleared: fullRows.length, lockOut }
+  }
+
+  /** True when every cell in the well is empty. */
+  public isEmpty(): boolean {
+    return this._slots.every((row) => row.every((cell) => cell === 0))
   }
 
   public reset(): void {

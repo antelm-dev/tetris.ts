@@ -2,6 +2,7 @@ import Field from './Field'
 import Piece from './Piece'
 import { PIECES_SHAPES, kicksFor } from './const'
 import type { PieceName } from './const'
+import { clearScore, comboScore, hardDropScore, perfectClearScore, softDropScore, spinNoClearScore } from './scoring'
 import type { Action, Direction, GameEvents } from './types'
 
 /**
@@ -18,34 +19,28 @@ const LOCK_DELAY = 500
  */
 const MAX_LOCK_RESETS = 15
 
-/**
- * Score multiplier applied to a difficult clear (Tetris or any spin clear)
- * that continues a back-to-back chain — i.e. the second and every subsequent
- * difficult clear in an unbroken run. Matches the guideline 1.5× bonus.
- */
-const B2B_MULTIPLIER = 1.5
+export type RandomFn = () => number
 
-/**
- * Per-step combo bonus, awarded as `COMBO_BONUS × combo × level` for every
- * clear beyond the first in an unbroken run of consecutive clears. Matches the
- * guideline combo table.
- */
-const COMBO_BONUS = 50
+export type GameOptions = {
+  width: number
+  height: number
+  /** Unit interval RNG used by the 7-bag shuffle. Defaults to `Math.random`. */
+  random?: RandomFn
+}
 
 export default class Game {
   public score = 0
   /**
    * Number of consecutive clears in the current run (the "combo" counter):
    * incremented on every clear, reset to 0 by any move that clears no lines.
-   * The combo *bonus* kicks in from the second clear onward — see
-   * {@link COMBO_BONUS}.
+   * The combo *bonus* kicks in from the second clear onward — see scoring.
    */
   public streak = 0
   /**
    * Length of the current back-to-back chain — the run of consecutive
    * "difficult" clears (a Tetris or any spin clear). Reset to 0 by any plain
    * 1–3 line clear; a no-clear move leaves it untouched. A chain of ≥ 2 earns
-   * the {@link B2B_MULTIPLIER} scoring bonus.
+   * the back-to-back scoring bonus.
    */
   public b2b = 0
   public lines = 0
@@ -75,6 +70,7 @@ export default class Game {
   private lowestRow = -Infinity
   public activePiece?: Piece
   public field: Field
+  private readonly random: RandomFn
 
   /** Renderer-supplied visual/audio hooks. Every callback is optional. */
   public events: GameEvents = {}
@@ -87,8 +83,9 @@ export default class Game {
     return this.paused
   }
 
-  constructor(options: { width: number; height: number }) {
+  constructor(options: GameOptions) {
     this.field = new Field(options)
+    this.random = options.random ?? Math.random
     this.initQueue()
   }
 
@@ -183,16 +180,16 @@ export default class Game {
    * makes the queue something a player can actually plan against.
    */
   private nextPiece(): Piece {
-    if (this.bag.length === 0) this.bag = Game.shuffledBag()
+    if (this.bag.length === 0) this.bag = this.shuffledBag()
     const name = this.bag.pop()!
     return new Piece(name, PIECES_SHAPES[name])
   }
 
-  /** All seven names in a fresh Fisher–Yates shuffle. */
-  private static shuffledBag(): PieceName[] {
+  /** All seven names in a fresh Fisher–Yates shuffle driven by {@link random}. */
+  private shuffledBag(): PieceName[] {
     const names = Object.keys(PIECES_SHAPES) as PieceName[]
     for (let i = names.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
+      const j = Math.floor(this.random() * (i + 1))
       ;[names[i], names[j]] = [names[j], names[i]]
     }
     return names
@@ -222,8 +219,10 @@ export default class Game {
     this.activePiece.move(dir)
     this.lastActionRotate = false
     this.resetLock()
-    if (dir === 'down') this.onDescend()
-    else this.events.onMove?.(dir)
+    if (dir === 'down') {
+      this.score += softDropScore(1)
+      this.onDescend()
+    } else this.events.onMove?.(dir)
   }
 
   /**
@@ -295,22 +294,25 @@ export default class Game {
 
   public push(hard = false): void {
     if (!this.activePiece) throw new Error('Active piece undefined')
-    let dropped = false
+    let distance = 0
     while (!this.field.checkCollision(this.activePiece, 'down')) {
       this.activePiece.move('down')
-      dropped = true
+      distance++
     }
+    if (hard) this.score += hardDropScore(distance)
     // Travelling after the rotation means the piece *fell* into its slot rather
     // than being spun into it — so a hard drop across open space is never a spin.
-    const spin = !dropped && this.isSpin(this.activePiece)
-    const cleared = this.field.placePiece(this.activePiece)
+    const spin = distance === 0 && this.isSpin(this.activePiece)
+    const locked = this.activePiece
+    const { cleared, lockOut } = this.field.placePiece(locked)
     this.events.onLock?.(hard)
     this.applyScore(cleared, spin)
-    if (spin) this.events.onSpin?.(this.activePiece.name, cleared)
+    if (spin) this.events.onSpin?.(locked.name, cleared)
     if (cleared > 0) this.events.onClear?.(this.field.lastCleared, cleared, this.level)
     this.activePiece = undefined
     this.canHold = true
     this.clearPieceState()
+    if (lockOut) this.setGameOver()
   }
 
   /** Per-piece bookkeeping — spin flags and the lock timer — back to zero. */
@@ -326,7 +328,7 @@ export default class Game {
     if (lines === 0) {
       // A spin with no clear still earns a small reward; combo resets as usual.
       // The back-to-back chain is *not* broken by a move that clears no lines.
-      if (spin) this.score += 100
+      if (spin) this.score += spinNoClearScore(this.level)
       this.streak = 0
       return
     }
@@ -337,20 +339,18 @@ export default class Game {
     const difficult = spin || lines === 4
     const chained = difficult && this.b2b > 0
     this.b2b = difficult ? this.b2b + 1 : 0
-    const points = spin ? [0, 800, 1200, 1600] : [0, 100, 300, 500, 800]
-    const base = points[lines] ?? (points.at(-1) as number)
-    // Back-to-back multiplies the line-clear score; the combo bonus is added on
-    // top so the two mechanics stack without either swallowing the other.
-    const value = chained ? Math.floor(base * B2B_MULTIPLIER) : base
-    this.score += value
+    this.score += clearScore(lines, spin, this.level, chained)
     if (chained && this.activePiece) {
       this.events.onB2B?.(this.b2b, this.activePiece.name, lines)
     }
-    // Combo: every clear past the first in a run adds COMBO_BONUS × combo × level.
     const combo = this.streak - 1
     if (combo > 0) {
-      this.score += COMBO_BONUS * combo * this.level
+      this.score += comboScore(combo, this.level)
       this.events.onCombo?.(combo, this.level)
+    }
+    if (this.field.isEmpty()) {
+      this.score += perfectClearScore(lines, this.level)
+      this.events.onPerfectClear?.(lines, this.level)
     }
     this.lines += lines
     const level = Math.floor(this.lines / 10) + 1

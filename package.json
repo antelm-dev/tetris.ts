@@ -2,8 +2,21 @@
   "name": "tetris.ts",
   "version": "1.0.0",
   "description": "Tetris in TypeScript on Electron",
+  "keywords": [],
+  "homepage": "https://github.com/antelm-dev/tetris.ts#readme",
+  "bugs": {
+    "url": "https://github.com/antelm-dev/tetris.ts/issues"
+  },
   "license": "MIT",
   "author": "Adel Terki <adel.terki2@outlook.fr>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/antelm-dev/tetris.ts.git"
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
   "type": "module",
   "main": "dist-main/main.cjs",
   "scripts": {

@@ -1,7 +1,7 @@
 import type P5 from 'p5'
 import { CELL, COLS, ROWS, cellToWorld } from '../core/geometry'
 import type { RGB } from '../core/color'
-import { INK, PALETTE } from '../config/themes'
+import { GARBAGE_SHADE, INK, PALETTE } from '../config/themes'
 import type { Field, Game, Piece } from '../engine'
 import { pieceCells } from './cells'
 
@@ -99,7 +99,7 @@ export function drawLockedField(p: P5, field: Field): void {
       const slot = slots[i][j]
       if (slot === 0) continue
       const { x, y } = cellToWorld(j, i)
-      const pal = PALETTE[slot]
+      const pal = slot === 'GARBAGE' ? GARBAGE_SHADE : PALETTE[slot]
       drawBlock(p, x, y, pal.body, pal.face)
     }
   }

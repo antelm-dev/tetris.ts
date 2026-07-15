@@ -1,35 +1,35 @@
 import render from './app/sketch'
 import type { HighScores } from './app/host'
+import { EMPTY_RECORDS } from './app/records'
 
 /**
- * High scores persisted through the small Express API (see `server/`) rather
- * than Electron IPC. There's no push channel for a browser tab (no
+ * Solo records persisted through the small Express API (see `server/`)
+ * rather than Electron IPC. There's no push channel for a browser tab (no
  * websocket), so `onBeaten` is a no-op — a beaten record already updates the
  * HUD synchronously through `submit`'s return value (see `app/events.ts`).
  */
 const scores: HighScores = {
   get: async () => {
     try {
-      const res = await fetch('/api/high-score')
-      if (!res.ok) return 0
-      const data: { highScore?: unknown } = await res.json()
-      return typeof data.highScore === 'number' ? data.highScore : 0
+      const res = await fetch('/api/records')
+      if (!res.ok) return EMPTY_RECORDS
+      const data: { records?: unknown } = await res.json()
+      return (data.records as typeof EMPTY_RECORDS) ?? EMPTY_RECORDS
     } catch {
-      return 0
+      return EMPTY_RECORDS
     }
   },
-  submit: async (score) => {
+  submit: async (payload) => {
     try {
-      const res = await fetch('/api/high-score', {
+      const res = await fetch('/api/records', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ score })
+        body: JSON.stringify(payload)
       })
-      if (!res.ok) return false
-      const data: { beaten?: unknown } = await res.json()
-      return data.beaten === true
+      if (!res.ok) return { beaten: false, records: EMPTY_RECORDS }
+      return await res.json()
     } catch {
-      return false
+      return { beaten: false, records: EMPTY_RECORDS }
     }
   },
   onBeaten: () => {}

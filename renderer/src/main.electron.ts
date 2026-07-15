@@ -12,9 +12,9 @@ window.addEventListener('DOMContentLoaded', () => {
   render(
     document.getElementById('root')!,
     bridge && {
-      get: () => bridge.game.getHighScore(),
-      submit: (score) => bridge.game.submitScore(score),
-      onBeaten: (cb) => bridge.game.onHighScoreBeaten(cb)
+      get: () => bridge.game.getRecords(),
+      submit: (payload) => bridge.game.submitRecord(payload),
+      onBeaten: (cb) => bridge.game.onRecordBeaten(({ mode, records }) => cb(mode, records))
     },
     bridge && { quit: () => bridge.window.close() }
   )

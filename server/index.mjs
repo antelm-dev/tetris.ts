@@ -6,7 +6,7 @@ import { createHighScoreStore } from './high-scores.mjs'
 /**
  * The web target's server. It does two jobs:
  *
- *  1. `/api/high-score` — the browser-facing twin of `main/ipc/game.ipc.ts`'s
+ *  1. `/api/records` — the browser-facing twin of `main/ipc/game.ipc.ts`'s
  *     Electron IPC channels, backed by the same kind of JSON file.
  *  2. everything else — serves the static `dist-web` build in production.
  *
@@ -29,16 +29,16 @@ app.disable('x-powered-by') // don't advertise the framework/version
 app.use(express.json())
 
 app.get(
-  '/api/high-score',
+  '/api/records',
   asyncHandler(async (_req, res) => {
-    res.json({ highScore: await store.read() })
+    res.json({ records: await store.read() })
   })
 )
 
 app.post(
-  '/api/high-score',
+  '/api/records',
   asyncHandler(async (req, res) => {
-    res.json(await store.submit(req.body?.score))
+    res.json(await store.submit(req.body))
   })
 )
 

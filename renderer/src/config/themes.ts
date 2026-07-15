@@ -147,6 +147,17 @@ export const THEMES: readonly ThemePreset[] = [
 export const DEFAULT_THEME = THEMES[0]
 
 /**
+ * Fixed neutral shade for garbage blocks (see `Field.addGarbage`) — deliberately
+ * theme-independent, so garbage always reads as "not a piece" regardless of the
+ * active palette.
+ */
+export const GARBAGE_SHADE: Shade = {
+  body: [104, 108, 118],
+  face: [156, 160, 170],
+  glow: [130, 134, 144]
+}
+
+/**
  * The live palette. Everything that paints a block reads through these objects,
  * and {@link applyTheme} rewrites them *in place* — so swapping themes at
  * runtime needs no re-import, re-wiring or restart of the sketch.

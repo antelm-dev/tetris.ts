@@ -2,10 +2,13 @@ import type P5 from 'p5'
 import { mix, type RGB } from '../core/color'
 import { hump, smooth } from '../core/ease'
 import { CELL, sidePanelTop, sidePanelX } from '../core/geometry'
+import { formatClock } from '../core/time'
 import { BIND_LABELS, BINDS, keyLabel } from '../config/keymap'
 import { settings } from '../config/settings'
 import { PALETTE, UI } from '../config/themes'
 import type { PieceName } from '../engine'
+import { MODES } from '../engine/modes'
+import type { ModeDef } from '../engine/modes'
 import { chromeScale, fitScale } from '../scene/camera'
 import {
   BAR,
@@ -50,7 +53,7 @@ interface Stat {
 interface OverlayState {
   title: string
   sub: string
-  kind: 'pause' | 'over'
+  kind: 'pause' | 'over' | 'complete'
   shown: boolean
   t: number // eased opacity, 0 → 1
 }
@@ -156,30 +159,61 @@ export class Ui {
   }
   /** The controls legend is opt-in — Tab toggles it. `t` is its eased opacity. */
   private readonly legend = { shown: false, t: 0 }
+  /** Active Solo mode — decides what the secondary "Best"/"Time" slot shows and how Lines reads. */
+  private mode: ModeDef = MODES.endless
 
   // --- public state setters --------------------------------------------------
   public setScore(v: number): void {
     this.set('score', v)
   }
+  /** Ignored while the mode shows a live clock in that slot instead (see {@link setElapsedMs}). */
   public setBest(v: number): void {
-    this.set('best', v)
+    if (!this.mode.timeDisplay) this.set('best', v)
   }
   public setLevel(v: number): void {
     this.set('level', v)
   }
   public setLines(v: number): void {
-    this.set('lines', v)
+    const target = this.mode.target.lines
+    this.setText('lines', target !== undefined ? `${v}/${target}` : String(v))
+  }
+
+  /**
+   * The active Solo mode — switches the HUD's secondary slot between "Best"
+   * (Endless/Marathon/Ultra) and a live clock (Sprint/Ultra — see
+   * {@link setElapsedMs}), and switches Lines to a `current/target` readout
+   * for a mode with a line target.
+   */
+  public setMode(mode: ModeDef): void {
+    this.mode = mode
+    this.stats.best.label = mode.timeDisplay ? 'Time' : 'Best'
+  }
+
+  /**
+   * Live active-gameplay clock, called every frame while playing. A no-op for
+   * a mode with no clock (Endless/Marathon); elapsed count-up for Sprint,
+   * countdown-from-target for Ultra. Bypasses the bump pulse — this changes
+   * every frame, and pulsing on every tick would read as constant flicker
+   * rather than the discrete-change cue it means elsewhere.
+   */
+  public setElapsedMs(ms: number): void {
+    if (!this.mode.timeDisplay) return
+    const shown = this.mode.timeDisplay === 'countdown' ? Math.max(0, (this.mode.target.timeMs ?? 0) - ms) : ms
+    this.stats.best.value = formatClock(shown, this.mode.timeDisplay === 'elapsed')
   }
 
   private set(key: StatKey, value: number): void {
+    this.setText(key, String(value))
+  }
+
+  private setText(key: StatKey, text: string): void {
     const s = this.stats[key]
-    const str = String(value)
-    if (s.value === str) return
-    s.value = str
+    if (s.value === text) return
+    s.value = text
     s.bump = 1
   }
 
-  public showOverlay(title: string, sub: string, kind: 'pause' | 'over'): void {
+  public showOverlay(title: string, sub: string, kind: 'pause' | 'over' | 'complete'): void {
     this.overlay.title = title
     this.overlay.sub = sub
     this.overlay.kind = kind
@@ -378,6 +412,7 @@ export class Ui {
     g.translate(HUD_PAD, chromeTop())
     g.scale(scale)
 
+    panelLabel(g, this.mode.shortLabel, w / 2, -6, UI.accent, 0.75)
     panel(g, 0, 0, w, HUD_PANEL_H, { r: 10, fill: PANEL, fillA: 232, strokeA: 82 })
 
     const innerW = w - HUD_PAD_IN * 2
@@ -682,7 +717,8 @@ export class Ui {
   private drawOverlay(g: P5.Graphics, p: P5): void {
     const a = this.overlay.t
     if (a <= 0.004) return
-    const titleCol = this.overlay.kind === 'over' ? RED : UI.accent
+    const OVERLAY_COLOR: Record<OverlayState['kind'], RGB> = { over: RED, complete: GOLD, pause: UI.accent }
+    const titleCol = OVERLAY_COLOR[this.overlay.kind]
     const rm = settings.reducedMotionActive
     const w = p.width
     const h = p.height

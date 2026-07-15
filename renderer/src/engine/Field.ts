@@ -1,5 +1,6 @@
 import type { Direction, Slot } from './types'
 import type Piece from './Piece'
+import type { RandomFn } from './Game'
 
 export type PlaceResult = {
   cleared: number
@@ -141,5 +142,34 @@ export default class Field {
 
   public reset(): void {
     this._slots = this._slots.map((row) => row.map((): Slot => 0))
+  }
+
+  /** An independent deep copy — mutating the clone never touches this field, or vice versa. */
+  public clone(): Field {
+    const field = new Field({ width: this._slots[0].length, height: this._slots.length })
+    field._slots = this._slots.map((row) => [...row])
+    return field
+  }
+
+  /**
+   * Push `count` garbage rows in from the bottom, each solid except for one
+   * random hole, shifting every existing row up to make room. Returns `true`
+   * if any row shifted off the top was non-empty — a garbage-induced top-out.
+   *
+   * `random` is injected (see {@link RandomFn}) rather than read from
+   * `Math.random`, so hole placement is deterministic under test.
+   */
+  public addGarbage(count: number, random: RandomFn): boolean {
+    const width = this._slots[0].length
+    let toppedOut = false
+    for (let i = 0; i < count; i++) {
+      if (this._slots[0].some((cell) => cell !== 0)) toppedOut = true
+      this._slots.shift()
+      const hole = Math.floor(random() * width)
+      const row = new Array<Slot>(width).fill('GARBAGE')
+      row[hole] = 0
+      this._slots.push(row)
+    }
+    return toppedOut
   }
 }

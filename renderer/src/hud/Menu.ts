@@ -5,6 +5,9 @@ import { BIND_GROUPS, BIND_LABELS, isBindable, keyLabel, type Bind } from '../co
 import { settings, type ReducedMotionPref } from '../config/settings'
 import { PALETTE, THEMES, UI } from '../config/themes'
 import type { PieceName } from '../engine'
+import { MODE_LIST } from '../engine/modes'
+import type { ModeId } from '../engine/modes'
+import type { BotDifficulty } from '../bot/types'
 import {
   actionRowBackground,
   clipRect,
@@ -46,7 +49,7 @@ import {
  * canvas is the only element under the cursor anyway.
  */
 
-type Screen = 'main' | 'settings'
+type Screen = 'main' | 'solo' | 'settings' | 'versus'
 
 interface Rect {
   x: number
@@ -57,7 +60,7 @@ interface Rect {
 
 type RowId =
   | 'solo'
-  | 'multiplayer'
+  | 'versus'
   | 'settings'
   | 'quit'
   | 'theme'
@@ -68,6 +71,10 @@ type RowId =
   | 'comfort:screenShake'
   | 'comfort:effects'
   | 'comfort:hints'
+  | 'versus:difficulty'
+  | 'versus:start'
+  | 'versus:back'
+  | `mode:${ModeId}`
 
 interface Row {
   id: RowId
@@ -75,21 +82,26 @@ interface Row {
   /** How the right-hand side of the row renders and what Enter/←/→ do. */
   kind: 'action' | 'theme' | 'bind' | 'stepper' | 'toggle'
   disabled?: boolean
-  /** Small pill on the right — used for the "soon" marker on multiplayer. */
+  /** Small pill on the right — e.g. a Solo mode's line/time target. */
   tag?: string
   bind?: Bind
-  /** `primary` reads as the main CTA (Solo); `secondary` recedes (Multiplayer). */
+  /** `primary` reads as the main CTA (Solo); `secondary` recedes a row that's still enabled but not the focus. */
   emphasis?: 'primary' | 'secondary'
 }
 
 type Entry = { kind: 'heading'; label: string } | { kind: 'gap'; h: number } | { kind: 'row'; row: Row }
 
 export interface MenuHandlers {
-  /** Start (or restart) a single-player game. */
-  onSolo: () => void
+  /** Start (or restart) a single-player game in the chosen Solo mode. */
+  onSelectMode: (mode: ModeId) => void
+  /** Start a local Versus match against a bot at the chosen difficulty. */
+  onVersus: (difficulty: BotDifficulty) => void
   /** Quit the app; the row is only shown when this is provided. */
   onQuit?: () => void
 }
+
+const DIFFICULTY_ORDER: BotDifficulty[] = ['easy', 'normal', 'hard']
+const DIFFICULTY_LABELS: Record<BotDifficulty, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' }
 
 const CARD_W = 500
 const PAD_X = 30
@@ -141,6 +153,8 @@ export class Menu {
   private hits: { row: Row; rect: Rect }[] = []
   /** `‹›` hit boxes for every value-adjustable row on screen (theme, steppers). */
   private valueArrows: { id: RowId; prev: Rect; next: Rect }[] = []
+  /** Chosen on the Versus setup screen; session-only, not persisted. */
+  private versusDifficulty: BotDifficulty = 'normal'
 
   constructor(private readonly handlers: MenuHandlers) {}
 
@@ -177,10 +191,31 @@ export class Menu {
     if (this.screen === 'main') {
       const rows: Row[] = [
         { id: 'solo', label: 'Solo', kind: 'action', emphasis: 'primary' },
-        { id: 'multiplayer', label: 'Multiplayer', kind: 'action', disabled: true, tag: 'Soon', emphasis: 'secondary' },
+        { id: 'versus', label: 'Versus', kind: 'action' },
         { id: 'settings', label: 'Settings', kind: 'action' }
       ]
       if (this.handlers.onQuit) rows.push({ id: 'quit', label: 'Quit', kind: 'action' })
+      return rows.map((row) => ({ kind: 'row', row }))
+    }
+
+    if (this.screen === 'versus') {
+      return [
+        { kind: 'heading', label: 'Bot difficulty' },
+        { kind: 'row', row: { id: 'versus:difficulty', label: 'Difficulty', kind: 'stepper' } },
+        { kind: 'gap', h: 8 },
+        { kind: 'row', row: { id: 'versus:start', label: 'Start', kind: 'action', emphasis: 'primary' } },
+        { kind: 'row', row: { id: 'versus:back', label: 'Back', kind: 'action' } }
+      ]
+    }
+
+    if (this.screen === 'solo') {
+      const rows: Row[] = MODE_LIST.map((mode) => ({
+        id: `mode:${mode.id}`,
+        label: mode.name,
+        kind: 'action',
+        tag: mode.tag
+      }))
+      rows.push({ id: 'back', label: 'Back', kind: 'action' })
       return rows.map((row) => ({ kind: 'row', row }))
     }
 
@@ -276,12 +311,18 @@ export class Menu {
     }
   }
 
+  private cycleVersusDifficulty(step: number): void {
+    const at = DIFFICULTY_ORDER.indexOf(this.versusDifficulty)
+    this.versusDifficulty = DIFFICULTY_ORDER[(at + step + DIFFICULTY_ORDER.length) % DIFFICULTY_ORDER.length]
+  }
+
   /** Dispatch a `‹›` adjustment for a theme or comfort-stepper row. */
   private adjust(row: Row, step: number): void {
     if (row.id === 'theme') this.cycleTheme(step)
     else if (row.id === 'comfort:reducedMotion') this.cycleReducedMotion(step)
     else if (row.id === 'comfort:screenShake') this.adjustIntensity('screenShake', step)
     else if (row.id === 'comfort:effects') this.adjustIntensity('effects', step)
+    else if (row.id === 'versus:difficulty') this.cycleVersusDifficulty(step)
   }
 
   private toggleHints(): void {
@@ -319,10 +360,24 @@ export class Menu {
       return
     }
 
+    if (row.id.startsWith('mode:')) {
+      this.hide()
+      this.handlers.onSelectMode(row.id.slice('mode:'.length) as ModeId)
+      return
+    }
+
     switch (row.id) {
       case 'solo':
-        this.hide()
-        this.handlers.onSolo()
+        this.screen = 'solo'
+        this.index = 0
+        this.scroll.offset = 0
+        this.scroll.target = 0
+        break
+      case 'versus':
+        this.screen = 'versus'
+        this.index = 0
+        this.scroll.offset = 0
+        this.scroll.target = 0
         break
       case 'settings':
         this.screen = 'settings'
@@ -336,20 +391,26 @@ export class Menu {
       case 'reset':
         this.activateReset()
         break
+      case 'versus:start':
+        this.hide()
+        this.handlers.onVersus(this.versusDifficulty)
+        break
       case 'back':
+      case 'versus:back':
         this.back()
         break
     }
   }
 
   private back(): void {
-    if (this.screen !== 'settings') return
+    if (this.screen === 'main') return
+    const from = this.screen
     this.screen = 'main'
     this.resetArmedUntil = 0
     this.scroll.offset = 0
     this.scroll.target = 0
     // Land back on the row that opened this screen.
-    this.index = this.rows().findIndex((r) => r.id === 'settings')
+    this.index = this.rows().findIndex((r) => r.id === from)
   }
 
   // --- keyboard --------------------------------------------------------------
@@ -552,7 +613,8 @@ export class Menu {
   private drawTitle(g: P5.Graphics, a: number): void {
     const accent = UI.accent
     const dc = g.drawingContext as CanvasRenderingContext2D
-    const title = this.screen === 'main' ? 'TETRIS.TS' : 'SETTINGS'
+    const TITLES: Record<Screen, string> = { main: 'TETRIS.TS', solo: 'SOLO', versus: 'VERSUS', settings: 'SETTINGS' }
+    const title = TITLES[this.screen]
 
     g.push()
     g.noStroke()
@@ -565,7 +627,7 @@ export class Menu {
     g.text(title, CARD_W / 2 - 3, 46)
     g.pop()
 
-    if (this.screen !== 'main') {
+    if (this.screen === 'settings') {
       g.push()
       g.noStroke()
       g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
@@ -573,6 +635,24 @@ export class Menu {
       g.textSize(11)
       setTracking(g, 1.4)
       g.text('Theme, controls and comfort — saved automatically', CARD_W / 2 - 0.7, 74)
+      g.pop()
+    } else if (this.screen === 'versus') {
+      g.push()
+      g.noStroke()
+      g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
+      g.textAlign(g.CENTER, g.CENTER)
+      g.textSize(11)
+      setTracking(g, 1.4)
+      g.text('Local match against a bot — no network required', CARD_W / 2 - 0.7, 74)
+      g.pop()
+    } else if (this.screen === 'solo') {
+      g.push()
+      g.noStroke()
+      g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
+      g.textAlign(g.CENTER, g.CENTER)
+      g.textSize(11)
+      setTracking(g, 1.4)
+      g.text('Choose how you want to play', CARD_W / 2 - 0.7, 74)
       g.pop()
     }
   }
@@ -705,6 +785,7 @@ export class Menu {
     if (id === 'comfort:reducedMotion') return reducedMotionLabel(settings.reducedMotion)
     if (id === 'comfort:screenShake') return `${Math.round(settings.screenShakeIntensity * 100)}%`
     if (id === 'comfort:effects') return `${Math.round(settings.effectsIntensity * 100)}%`
+    if (id === 'versus:difficulty') return DIFFICULTY_LABELS[this.versusDifficulty]
     return ''
   }
 
@@ -790,10 +871,13 @@ export class Menu {
   }
 
   private drawFooter(g: P5.Graphics, cardH: number, a: number): void {
-    const hint =
-      this.screen === 'main'
-        ? '↑↓ Navigate   ·   Enter Select'
-        : '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back'
+    const FOOTER_HINTS: Record<Screen, string> = {
+      main: '↑↓ Navigate   ·   Enter Select',
+      solo: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
+      versus: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back',
+      settings: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back'
+    }
+    const hint = FOOTER_HINTS[this.screen]
     g.push()
     g.noStroke()
     g.fill(FG[0], FG[1], FG[2], 0.42 * 255 * a)

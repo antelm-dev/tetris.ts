@@ -2,6 +2,8 @@ import Field from './Field'
 import Piece from './Piece'
 import { PIECES_SHAPES, kicksFor } from './const'
 import type { PieceName } from './const'
+import { MODES } from './modes'
+import type { ModeDef } from './modes'
 import { clearScore, comboScore, hardDropScore, perfectClearScore, softDropScore, spinNoClearScore } from './scoring'
 import type { Action, Direction, GameEvents } from './types'
 
@@ -26,6 +28,8 @@ export type GameOptions = {
   height: number
   /** Unit interval RNG used by the 7-bag shuffle. Defaults to `Math.random`. */
   random?: RandomFn
+  /** Solo mode played — its line/time target decides how a run completes. Defaults to Endless. */
+  mode?: ModeDef
 }
 
 export default class Game {
@@ -71,6 +75,17 @@ export default class Game {
   public activePiece?: Piece
   public field: Field
   private readonly random: RandomFn
+  /**
+   * Solo mode being played (see {@link ModeDef}) — deliberately a public,
+   * freely-reassignable field rather than a constructor-only option: the menu
+   * picks a mode before {@link start}, and swapping it never touches run
+   * state on its own, so a restart via {@link start} keeps whatever mode was
+   * last set.
+   */
+  public mode: ModeDef
+  /** Active-gameplay time, in ms — accumulated in {@link tick}, frozen by pause/game-over/completion. */
+  public elapsedMs = 0
+  private _completed = false
 
   /** Renderer-supplied visual/audio hooks. Every callback is optional. */
   public events: GameEvents = {}
@@ -83,9 +98,15 @@ export default class Game {
     return this.paused
   }
 
+  /** True once the active mode's target (lines or time) has been reached — distinct from {@link gameOver}. */
+  public get completed() {
+    return this._completed
+  }
+
   constructor(options: GameOptions) {
     this.field = new Field(options)
     this.random = options.random ?? Math.random
+    this.mode = options.mode ?? MODES.endless
     this.initQueue()
   }
 
@@ -105,7 +126,7 @@ export default class Game {
    * lock-delay clock, that decides when it stops being the player's problem.
    */
   public update(): void {
-    if (this.paused || this._gameOver) return
+    if (this.paused || this._gameOver || this._completed) return
 
     if (!this.activePiece) {
       this.addNextPiece()
@@ -126,15 +147,44 @@ export default class Game {
    * last-second slide or spin possible at all — at level 13 gravity is a 70 ms
    * tick, and without a lock delay the window to spin into a slot is a single
    * frame. Lifting off the floor again cancels the countdown entirely.
+   *
+   * This is also the clock for a mode's time target (Ultra): active-gameplay
+   * time only accrues here, so it is naturally frozen by the same pause/
+   * game-over guard as the lock-delay countdown, and stops the instant a run
+   * completes or ends.
    */
   public tick(dt: number): void {
-    if (this.paused || this._gameOver || !this.activePiece) return
+    if (this.paused || this._gameOver || this._completed) return
+    this.elapsedMs += dt * 1000
+    this.checkCompletion()
+    if (this._completed || !this.activePiece) return
     if (!this.field.checkCollision(this.activePiece, 'down')) {
       this.lockTimer = 0
       return
     }
     this.lockTimer += dt * 1000
     if (this.lockTimer >= LOCK_DELAY) this.push()
+  }
+
+  /**
+   * Whether the active mode's target has just been reached — a completed
+   * Marathon/Sprint (lines) or Ultra (time). Checked after every line clear
+   * and every {@link tick}, so a multi-line clear that jumps straight past the
+   * target still completes correctly, and a time target fires the moment it
+   * elapses even with no piece in play.
+   */
+  private checkCompletion(): void {
+    if (this._gameOver || this._completed) return
+    const { lines, timeMs } = this.mode.target
+    const reachedLines = lines !== undefined && this.lines >= lines
+    const reachedTime = timeMs !== undefined && this.elapsedMs >= timeMs
+    if (reachedLines || reachedTime) this.setCompleted()
+  }
+
+  private setCompleted(): void {
+    this._completed = true
+    this.activePiece = undefined
+    this.events.onComplete?.(this.score, this.elapsedMs, this.lines)
   }
 
   /** Restart the lock countdown after a successful move/rotate, budget allowing. */
@@ -196,11 +246,11 @@ export default class Game {
   }
 
   public action(name: Action): void {
-    if (this._gameOver && name === 'push') {
+    if ((this._gameOver || this._completed) && name === 'push') {
       this.start()
       return
     }
-    if (this._gameOver || !this.activePiece) return
+    if (this._gameOver || this._completed || !this.activePiece) return
     // While paused the only accepted input is un-pausing.
     if (this.paused && name !== 'pause') return
     if (name === 'hold') this.hold()
@@ -312,7 +362,10 @@ export default class Game {
     this.activePiece = undefined
     this.canHold = true
     this.clearPieceState()
+    // A lock-out always means game over, even if this same clear also reached
+    // the mode's line target — topping out is never a successful completion.
     if (lockOut) this.setGameOver()
+    else this.checkCompletion()
   }
 
   /** Per-piece bookkeeping — spin flags and the lock timer — back to zero. */
@@ -366,16 +419,23 @@ export default class Game {
     this.events.onGameOver?.(this.score)
   }
 
-  /** Reset every bit of state and deal a fresh piece. Also the restart path. */
+  /**
+   * Reset every bit of run state and deal a fresh piece. Also the restart
+   * path. Deliberately leaves {@link mode} untouched — restarting keeps
+   * whatever mode was last selected; only an explicit reassignment of `mode`
+   * changes it.
+   */
   public start(): void {
     this.field.reset()
     this._gameOver = false
+    this._completed = false
     this.paused = false
     this.score = 0
     this.streak = 0
     this.b2b = 0
     this.lines = 0
     this.level = 1
+    this.elapsedMs = 0
     this.holdPiece = undefined
     this.canHold = true
     this.initQueue()
@@ -397,5 +457,17 @@ export default class Game {
     this.holdPiece = piece
     this.canHold = false
     this.events.onHold?.()
+  }
+
+  /**
+   * Push `count` garbage rows in from the bottom (see {@link Field.addGarbage}).
+   * A no-op once the game is already over. Ends the game if the incoming rows
+   * shove an occupied cell above the visible well.
+   */
+  public receiveGarbage(count: number): void {
+    if (this._gameOver || this._completed || count <= 0) return
+    const toppedOut = this.field.addGarbage(count, this.random)
+    this.events.onGarbageReceived?.(count)
+    if (toppedOut) this.setGameOver()
   }
 }

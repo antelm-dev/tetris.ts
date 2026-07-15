@@ -1,13 +1,12 @@
 import type P5 from 'p5'
-import { mix, type RGB } from '../core/color'
-import { clamp01, smooth } from '../core/ease'
-import { BIND_GROUPS, BIND_LABELS, isBindable, keyLabel, type Bind } from '../config/keymap'
-import { settings, type ReducedMotionPref } from '../config/settings'
-import { PALETTE, THEMES, UI } from '../config/themes'
-import type { PieceName } from '../engine'
-import { MODE_LIST } from '../engine/modes'
-import type { ModeId } from '../engine/modes'
-import type { BotDifficulty } from '../bot/types'
+import { mix, type RGB } from '../../core/color'
+import { clamp01, smooth } from '../../core/ease'
+import { BIND_GROUPS, BIND_LABELS, isBindable, keyLabel, type Bind } from '../../config/keymap'
+import { settings, type ReducedMotionPref } from '../../config/settings'
+import { PALETTE, THEMES, UI } from '../../config/themes'
+import { MODE_LIST } from '../../engine/modes'
+import type { ModeId } from '../../engine/modes'
+import type { BotDifficulty } from '../../bot/types'
 import {
   actionRowBackground,
   clipRect,
@@ -36,7 +35,36 @@ import {
   updateToastQueue,
   type ScrollState,
   type ToastQueueState
-} from './widgets'
+} from '../widgets'
+import {
+  CARD_MARGIN_X,
+  CARD_MARGIN_Y,
+  CARD_W,
+  DIFFICULTY_LABELS,
+  DIFFICULTY_ORDER,
+  DIM,
+  entryHeight,
+  FOOTER_H,
+  HEADING_H,
+  inside,
+  INTENSITY_STEP,
+  MIN_VIEWPORT_H,
+  PAD_X,
+  PRIMARY_IDLE_STROKE_A,
+  PRIMARY_IDLE_WASH_A,
+  PRIMARY_TEXT_SIZE,
+  reducedMotionLabel,
+  RESET_CONFIRM_WINDOW,
+  ROW_GAP,
+  ROW_H,
+  SCROLL_INDICATOR_X,
+  SLOT_ORDER,
+  TITLE_H,
+  TOAST_HALF_H,
+  TOAST_PAD,
+  WHEEL_STEP
+} from './model'
+import type { Entry, MenuHandlers, Rect, Row, RowId, Screen } from './types'
 
 /**
  * The front-end menu, drawn with p5 into the same kind of off-screen 2D buffer
@@ -49,89 +77,6 @@ import {
  * from the sketch's mouse state rather than through DOM listeners, because the
  * canvas is the only element under the cursor anyway.
  */
-
-type Screen = 'main' | 'solo' | 'settings' | 'versus'
-
-interface Rect {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
-type RowId =
-  | 'solo'
-  | 'versus'
-  | 'settings'
-  | 'quit'
-  | 'theme'
-  | 'reset'
-  | 'back'
-  | `bind:${Bind}`
-  | 'comfort:reducedMotion'
-  | 'comfort:screenShake'
-  | 'comfort:effects'
-  | 'comfort:hints'
-  | 'versus:difficulty'
-  | 'versus:start'
-  | 'versus:back'
-  | `mode:${ModeId}`
-
-interface Row {
-  id: RowId
-  label: string
-  /** How the right-hand side of the row renders and what Enter/←/→ do. */
-  kind: 'action' | 'theme' | 'bind' | 'stepper' | 'toggle'
-  disabled?: boolean
-  /** Small pill on the right — e.g. a Solo mode's line/time target. */
-  tag?: string
-  bind?: Bind
-  /** `primary` reads as the main CTA (Solo); `secondary` recedes a row that's still enabled but not the focus. */
-  emphasis?: 'primary' | 'secondary'
-}
-
-type Entry = { kind: 'heading'; label: string } | { kind: 'gap'; h: number } | { kind: 'row'; row: Row }
-
-export interface MenuHandlers {
-  /** Start (or restart) a single-player game in the chosen Solo mode. */
-  onSelectMode: (mode: ModeId) => void
-  /** Start a local Versus match against a bot at the chosen difficulty. */
-  onVersus: (difficulty: BotDifficulty) => void
-  /** Quit the app; the row is only shown when this is provided. */
-  onQuit?: () => void
-}
-
-const DIFFICULTY_ORDER: BotDifficulty[] = ['easy', 'normal', 'hard']
-const DIFFICULTY_LABELS: Record<BotDifficulty, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' }
-
-const CARD_W = 500
-const PAD_X = 30
-const ROW_H = 42
-const ROW_GAP = 6
-const HEADING_H = 30
-const TITLE_H = 104
-const FOOTER_H = 44
-const CARD_MARGIN_X = 20
-const CARD_MARGIN_Y = 24
-const MIN_VIEWPORT_H = ROW_H * 3
-const WHEEL_STEP = 0.5
-const INTENSITY_STEP = 0.1
-const RESET_CONFIRM_WINDOW = 4
-const PRIMARY_TEXT_SIZE = 17
-const PRIMARY_IDLE_WASH_A = 26
-const PRIMARY_IDLE_STROKE_A = 70
-const TOAST_HALF_H = 24
-const TOAST_PAD = 12
-const SCROLL_INDICATOR_X = CARD_W - 14
-
-const DIM: RGB = [4, 6, 12]
-const SLOT_ORDER: PieceName[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
-
-function reducedMotionLabel(pref: ReducedMotionPref): string {
-  if (pref === 'auto') return 'Auto'
-  return pref === 'on' ? 'On' : 'Off'
-}
-
 export class Menu {
   private g?: P5.Graphics
   private screen: Screen = 'main'
@@ -884,14 +829,4 @@ export class Menu {
     g.text(hint, CARD_W / 2 - 0.5, cardH - FOOTER_H / 2 - 4)
     g.pop()
   }
-}
-
-function entryHeight(e: Entry): number {
-  if (e.kind === 'heading') return HEADING_H
-  if (e.kind === 'gap') return e.h
-  return ROW_H
-}
-
-function inside(r: Rect, x: number, y: number): boolean {
-  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
 }

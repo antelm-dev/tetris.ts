@@ -1,6 +1,6 @@
 {
   "name": "tetris.ts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Tetris in TypeScript on Electron",
   "keywords": [],
   "homepage": "https://github.com/antelm-dev/tetris.ts#readme",

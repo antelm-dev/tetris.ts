@@ -5,7 +5,8 @@ export type { PieceName }
 export type Direction = 'left' | 'right' | 'down'
 export type Rotate = `rotate-${'right' | 'left'}`
 export type Action = Direction | Rotate | 'push' | 'pause' | 'hold'
-export type Slot = PieceName | 0
+/** `'GARBAGE'` is a filled cell with no owning piece — see `Field.addGarbage`. */
+export type Slot = PieceName | 'GARBAGE' | 0
 
 /**
  * Optional, fire-and-forget callbacks the renderer can attach to a `Game` to
@@ -57,4 +58,11 @@ export interface GameEvents {
   onGameOver?: (score: number) => void
   /** A fresh game started (also fired on restart). */
   onStart?: () => void
+  /** Garbage rows were just pushed into the field via `Game.receiveGarbage`. */
+  onGarbageReceived?: (count: number) => void
+  /**
+   * The active mode's target was reached — a successful completion, distinct
+   * from `onGameOver`. `lines`/`elapsedMs` are the run's final totals.
+   */
+  onComplete?: (score: number, elapsedMs: number, lines: number) => void
 }

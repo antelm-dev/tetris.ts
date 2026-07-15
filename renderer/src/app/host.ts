@@ -1,14 +1,18 @@
+import type { ModeId } from '../engine/modes'
+import type { RecordsState, SubmitPayload, SubmitResult } from './records'
+
 /**
  * What the sketch needs from whatever is hosting it. Both are optional and kept
  * as tiny interfaces, so the renderer stays decoupled from the Electron IPC
  * layer — and runs perfectly well in a plain browser tab without either.
  */
 
-/** High-score persistence, backed by the Electron bridge. */
+/** Per-mode Solo record persistence, backed by the Electron bridge or the web API. */
 export interface HighScores {
-  get: () => Promise<number>
-  submit: (score: number) => Promise<boolean>
-  onBeaten: (cb: (score: number) => void) => void
+  get: () => Promise<RecordsState>
+  submit: (payload: SubmitPayload) => Promise<SubmitResult>
+  /** Fired by a push event (Electron only — see `main.ts`'s no-op web version). */
+  onBeaten: (cb: (mode: ModeId, records: RecordsState) => void) => void
 }
 
 /** Host capabilities the menu can offer. */

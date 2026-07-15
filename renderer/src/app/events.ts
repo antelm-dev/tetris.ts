@@ -1,5 +1,6 @@
 import type { RGB } from '../core/color'
 import { cellToWorld, CELL, COLS } from '../core/geometry'
+import { formatClock } from '../core/time'
 import { settings } from '../config/settings'
 import { PALETTE } from '../config/themes'
 import type { Game } from '../engine'
@@ -9,6 +10,7 @@ import { centroid, pieceCells } from '../scene/cells'
 import type { Ui } from '../hud/Ui'
 import type { Gravity, PieceMotion } from './loop'
 import type { HighScores } from './host'
+import { bestScoreOf, completionSubmission, gameOverSubmission, type SubmitPayload } from './records'
 
 /**
  * The translation layer between the engine and the presentation: every hook the
@@ -119,16 +121,22 @@ export function wireEvents(game: Game, view: Presentation): void {
     onGameOver: (score) => {
       shake(0.8)
       ui.showOverlay('Game Over', `Score ${score} · Space to replay · M for menu`, 'over')
-      // `submit` persists in the main process and reports whether it beat the
-      // stored record, in which case the Best stat updates immediately.
-      void scores
-        ?.submit(score)
-        .then((isRecord) => {
-          if (isRecord) ui.setBest(score)
-        })
-        .catch(() => {
-          // Persistence is optional — a bridge/fs failure must not reject unhandled.
-        })
+      // A game over only counts toward a mode's record when that mode ranks
+      // by score regardless of whether the run was completed (Sprint's time
+      // is meaningless without a successful clear — see `gameOverSubmission`).
+      const payload = gameOverSubmission(game.mode.id, score, game.elapsedMs)
+      if (payload) submitRecord(payload)
+    },
+
+    onComplete: (score, elapsedMs) => {
+      shake(0.5)
+      const sub =
+        game.mode.emphasis === 'time'
+          ? `Time ${formatClock(elapsedMs, true)} · Space to replay · M for menu`
+          : `Score ${score} · Space to replay · M for menu`
+      ui.showOverlay(`${game.mode.name} Complete`, sub, 'complete')
+      const payload = completionSubmission(game.mode.id, score, elapsedMs)
+      if (payload) submitRecord(payload)
     },
 
     onPause: (paused) => {
@@ -146,5 +154,21 @@ export function wireEvents(game: Game, view: Presentation): void {
       ui.hideOverlay()
       ui.showStartHint()
     }
+  }
+
+  /**
+   * Persist a run's record. `submit` reports whether it beat the stored one,
+   * in which case the Best stat updates immediately; the celebratory banner
+   * is a separate concern, driven by the `onBeaten` push event (see `sketch.ts`).
+   */
+  function submitRecord(payload: SubmitPayload): void {
+    void scores
+      ?.submit(payload)
+      .then((result) => {
+        if (result.beaten) ui.setBest(bestScoreOf(result.records, game.mode.id))
+      })
+      .catch(() => {
+        // Persistence is optional — a bridge/fs failure must not reject unhandled.
+      })
   }
 }

@@ -2,10 +2,13 @@ import type P5 from 'p5'
 import { mix, type RGB } from '../core/color'
 import { hump, smooth } from '../core/ease'
 import { CELL, sidePanelTop, sidePanelX } from '../core/geometry'
+import { formatClock } from '../core/time'
 import { BIND_LABELS, BINDS, keyLabel } from '../config/keymap'
 import { settings } from '../config/settings'
 import { PALETTE, UI } from '../config/themes'
 import type { PieceName } from '../engine'
+import { MODES } from '../engine/modes'
+import type { ModeDef } from '../engine/modes'
 import { chromeScale, fitScale } from '../scene/camera'
 import {
   BAR,
@@ -23,6 +26,7 @@ import {
   pushToast,
   RED,
   setTracking,
+  titlebarClearance,
   truncate,
   updateToastQueue,
   type ToastQueueState
@@ -50,7 +54,7 @@ interface Stat {
 interface OverlayState {
   title: string
   sub: string
-  kind: 'pause' | 'over'
+  kind: 'pause' | 'over' | 'complete'
   shown: boolean
   t: number // eased opacity, 0 → 1
 }
@@ -90,32 +94,24 @@ const LINE_LABELS = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'] as const
 const emptyDraft = (): MoveDraft => ({ lines: -1, b2b: 0, combo: 0, perfectClear: false, dirty: false })
 
 // --- compact HUD panel layout ------------------------------------------------
-const HUD_PAD = 16 // outer margin from the window edge
-const TITLEBAR_H = 34 // custom frameless titlebar in styles.css
+const HUD_PAD = 16
 const HUD_MIN_W = 120
-const HUD_MAX_W = 220
-const HUD_PAD_IN = 12 // inner panel padding
-const HUD_PRIMARY_ROW_H = 42 // Score / Level row (label + big value)
+const HUD_MAX_W = 200
+const HUD_PAD_IN = 8
+const HUD_PRIMARY_ROW_H = 34
 const HUD_ROW_GAP = 4
-const HUD_SECONDARY_ROW_H = 22 // Best · Lines row
-const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H * 2 + HUD_ROW_GAP * 2 + HUD_SECONDARY_ROW_H
+const HUD_SECONDARY_ROW_H = 26
+const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H + HUD_ROW_GAP + HUD_SECONDARY_ROW_H
 const HUD_CALLOUT_GAP = 8
-/** How much the value pulses on a change — reduced-motion drops this to 0. */
+const MODE_LABEL_CLEARANCE = 20
 const PULSE_SCALE_PRIMARY = 0.22
 const PULSE_SCALE_SECONDARY = 0.12
-/** Half the `drawPanel` frame's `CELL*3.4` plane — keeps the HUD clear of the hold panel. */
 const SIDE_PANEL_HALF = CELL * 1.7
 const SIDE_PANEL_LABEL_GAP = 14
 
 const START_HINT_HOLD = 4.5
 const START_HINT_TEXT = 'TAB CONTROLS  ·  ESC PAUSE'
 
-/** Titlebar is hidden in fullscreen (see `body.is-fullscreen` in styles.css). */
-function titlebarClearance(): number {
-  return document.body.classList.contains('is-fullscreen') ? 0 : TITLEBAR_H
-}
-
-/** Top edge for top-anchored chrome — clears the titlebar when it is visible. */
 function chromeTop(): number {
   return titlebarClearance() + HUD_PAD
 }
@@ -156,30 +152,61 @@ export class Ui {
   }
   /** The controls legend is opt-in — Tab toggles it. `t` is its eased opacity. */
   private readonly legend = { shown: false, t: 0 }
+  /** Active Solo mode — decides what the secondary "Best"/"Time" slot shows and how Lines reads. */
+  private mode: ModeDef = MODES.endless
 
   // --- public state setters --------------------------------------------------
   public setScore(v: number): void {
     this.set('score', v)
   }
+  /** Ignored while the mode shows a live clock in that slot instead (see {@link setElapsedMs}). */
   public setBest(v: number): void {
-    this.set('best', v)
+    if (!this.mode.timeDisplay) this.set('best', v)
   }
   public setLevel(v: number): void {
     this.set('level', v)
   }
   public setLines(v: number): void {
-    this.set('lines', v)
+    const target = this.mode.target.lines
+    this.setText('lines', target !== undefined ? `${v}/${target}` : String(v))
+  }
+
+  /**
+   * The active Solo mode — switches the HUD's secondary slot between "Best"
+   * (Endless/Marathon/Ultra) and a live clock (Sprint/Ultra — see
+   * {@link setElapsedMs}), and switches Lines to a `current/target` readout
+   * for a mode with a line target.
+   */
+  public setMode(mode: ModeDef): void {
+    this.mode = mode
+    this.stats.best.label = mode.timeDisplay ? 'Time' : 'Best'
+  }
+
+  /**
+   * Live active-gameplay clock, called every frame while playing. A no-op for
+   * a mode with no clock (Endless/Marathon); elapsed count-up for Sprint,
+   * countdown-from-target for Ultra. Bypasses the bump pulse — this changes
+   * every frame, and pulsing on every tick would read as constant flicker
+   * rather than the discrete-change cue it means elsewhere.
+   */
+  public setElapsedMs(ms: number): void {
+    if (!this.mode.timeDisplay) return
+    const shown = this.mode.timeDisplay === 'countdown' ? Math.max(0, (this.mode.target.timeMs ?? 0) - ms) : ms
+    this.stats.best.value = formatClock(shown, this.mode.timeDisplay === 'elapsed')
   }
 
   private set(key: StatKey, value: number): void {
+    this.setText(key, String(value))
+  }
+
+  private setText(key: StatKey, text: string): void {
     const s = this.stats[key]
-    const str = String(value)
-    if (s.value === str) return
-    s.value = str
+    if (s.value === text) return
+    s.value = text
     s.bump = 1
   }
 
-  public showOverlay(title: string, sub: string, kind: 'pause' | 'over'): void {
+  public showOverlay(title: string, sub: string, kind: 'pause' | 'over' | 'complete'): void {
     this.overlay.title = title
     this.overlay.sub = sub
     this.overlay.kind = kind
@@ -375,69 +402,82 @@ export class Ui {
     const w = hudLocalWidth(p, scale)
 
     g.push()
-    g.translate(HUD_PAD, chromeTop())
+    g.translate(HUD_PAD, chromeTop() + MODE_LABEL_CLEARANCE)
     g.scale(scale)
 
-    panel(g, 0, 0, w, HUD_PANEL_H, { r: 12, fill: PANEL, fillA: 214, strokeA: 64 })
+    panelLabel(g, this.mode.shortLabel, w / 2, -8, UI.accent, 0.75)
+    panel(g, 0, 0, w, HUD_PANEL_H, { r: 10, fill: PANEL, fillA: 232, strokeA: 82 })
 
     const innerW = w - HUD_PAD_IN * 2
-    let ry = HUD_PAD_IN
-    ry = this.drawPrimaryStat(g, this.stats.score, HUD_PAD_IN, ry, innerW, accent) + HUD_ROW_GAP
-    ry = this.drawPrimaryStat(g, this.stats.level, HUD_PAD_IN, ry, innerW, accent) + HUD_ROW_GAP
-    this.drawSecondaryRow(g, HUD_PAD_IN, ry, innerW, accent)
+    const primaryGap = 10
+    const primaryColW = (innerW - primaryGap) / 2
+    this.drawPrimaryStat(g, this.stats.score, HUD_PAD_IN, HUD_PAD_IN, primaryColW, accent)
+    this.drawPrimaryStat(g, this.stats.level, HUD_PAD_IN + primaryColW + primaryGap, HUD_PAD_IN, primaryColW, accent)
+
+    const dividerY = HUD_PAD_IN + HUD_PRIMARY_ROW_H + HUD_ROW_GAP / 2
+    g.push()
+    g.stroke(FG[0], FG[1], FG[2], 28)
+    g.strokeWeight(1)
+    g.line(HUD_PAD_IN, dividerY + 0.5, w - HUD_PAD_IN, dividerY + 0.5)
+    g.pop()
+
+    this.drawSecondaryRow(g, HUD_PAD_IN, HUD_PAD_IN + HUD_PRIMARY_ROW_H + HUD_ROW_GAP, innerW, accent)
 
     this.drawMoveCallout(g, 0, HUD_PANEL_H + HUD_CALLOUT_GAP, w)
     g.pop()
   }
 
-  /** A large Score/Level row. Returns the y just past it, so callers can stack rows. */
-  private drawPrimaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): number {
+  /** Primary value cell; Score and Level share equal width, both centered within it. */
+  private drawPrimaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): void {
+    const cx = x + w / 2
     g.push()
     g.noStroke()
-    g.fill(FG[0], FG[1], FG[2], 128)
-    g.textAlign(g.LEFT, g.TOP)
-    g.textSize(10)
-    setTracking(g, 2.2)
-    g.text(s.label.toUpperCase(), x, y)
+    g.fill(FG[0], FG[1], FG[2], 168)
+    g.textAlign(g.CENTER, g.TOP)
+    g.textSize(9)
+    setTracking(g, 1.8)
+    g.text(s.label.toUpperCase(), cx, y)
     g.pop()
 
     const b = hump(s.bump)
     const col = mix(FG, accent, b)
     const scale = 1 + (settings.reducedMotionActive ? 0 : b * PULSE_SCALE_PRIMARY)
+    const valueSize = 22
     g.push()
     g.noStroke()
     g.fill(col[0], col[1], col[2])
-    g.textAlign(g.LEFT, g.BASELINE)
-    g.textSize(22)
+    g.textAlign(g.CENTER, g.TOP)
+    g.textSize(valueSize)
     setTracking(g, 0)
+    const fittedSize = Math.max(14, valueSize * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
+    g.textSize(fittedSize)
     const value = truncate(g, s.value, w)
     const dc = g.drawingContext as CanvasRenderingContext2D
     dc.shadowColor = `rgba(${accent[0]}, ${accent[1]}, ${accent[2]}, 0.35)`
     dc.shadowBlur = 12
-    g.translate(x, y + HUD_PRIMARY_ROW_H - 4)
+    g.translate(cx, y + 12)
     g.scale(scale)
     g.text(value, 0, 0)
     g.pop()
-
-    return y + HUD_PRIMARY_ROW_H
   }
 
   /** Best + Lines, side by side, dimmer and smaller — secondary information. */
   private drawSecondaryRow(g: P5.Graphics, x: number, y: number, w: number, accent: RGB): void {
-    const colGap = 12
+    const colGap = 8
     const colW = (w - colGap) / 2
     this.drawSecondaryStat(g, this.stats.best, x, y, colW, accent)
     this.drawSecondaryStat(g, this.stats.lines, x + colW + colGap, y, colW, accent)
   }
 
   private drawSecondaryStat(g: P5.Graphics, s: Stat, x: number, y: number, w: number, accent: RGB): void {
+    const cx = x + w / 2
     g.push()
     g.noStroke()
-    g.fill(FG[0], FG[1], FG[2], 105)
-    g.textAlign(g.LEFT, g.TOP)
-    g.textSize(9)
-    setTracking(g, 1.8)
-    g.text(s.label.toUpperCase(), x, y)
+    g.fill(FG[0], FG[1], FG[2], 150)
+    g.textAlign(g.CENTER, g.TOP)
+    g.textSize(8)
+    setTracking(g, 1.5)
+    g.text(s.label.toUpperCase(), cx, y)
     g.pop()
 
     const b = hump(s.bump)
@@ -445,12 +485,14 @@ export class Ui {
     const scale = 1 + (settings.reducedMotionActive ? 0 : b * PULSE_SCALE_SECONDARY)
     g.push()
     g.noStroke()
-    g.fill(col[0], col[1], col[2], 220)
-    g.textAlign(g.LEFT, g.TOP)
-    g.textSize(12)
+    g.fill(col[0], col[1], col[2], 245)
+    g.textAlign(g.CENTER, g.TOP)
+    g.textSize(13)
     setTracking(g, 0)
+    const fittedSize = Math.max(10, 13 * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
+    g.textSize(fittedSize)
     const value = truncate(g, s.value, w)
-    g.translate(x, y + 9)
+    g.translate(cx, y + 11)
     g.scale(scale)
     g.text(value, 0, 0)
     g.pop()
@@ -507,16 +549,16 @@ export class Ui {
     const c = this.callout
     const pop = hump(c.pop)
     const hasBadges = c.b2b > 0 || c.combo > 0
-    let h = 52
-    if (c.sub && hasBadges) h = 86
-    else if (c.sub) h = 68
-    else if (hasBadges) h = 72
+    let h = 48
+    if (c.sub && hasBadges) h = 76
+    else if (c.sub) h = 56
+    else if (hasBadges) h = 64
 
     g.push()
     g.translate(x + (1 - a) * -18, y)
     g.scale(1 + pop * 0.08)
 
-    panel(g, 0, 0, w, h, { r: 10, fill: PANEL, fillA: 220 * a, strokeA: 70 * a })
+    panel(g, 0, 0, w, h, { r: 10, fill: PANEL, fillA: 236 * a, strokeA: 84 * a })
 
     g.noStroke()
     g.fill(c.color[0], c.color[1], c.color[2], 255 * a)
@@ -527,25 +569,25 @@ export class Ui {
     g.noStroke()
     g.fill(c.color[0], c.color[1], c.color[2], 255 * a)
     g.textAlign(g.LEFT, g.TOP)
-    g.textSize(c.title.length > 10 ? 12 : 14)
+    g.textSize(c.title.length > 10 ? 12 : 15)
     setTracking(g, 1.4)
     dc.shadowColor = `rgba(${c.color[0]}, ${c.color[1]}, ${c.color[2]}, ${0.55 * a})`
     dc.shadowBlur = 16 + pop * 10
-    g.text(c.title, 14, 12)
+    g.text(c.title, 14, 10)
     g.pop()
 
     if (c.sub) {
       g.noStroke()
-      g.fill(FG[0], FG[1], FG[2], 210 * a)
+      g.fill(FG[0], FG[1], FG[2], 235 * a)
       g.textAlign(g.LEFT, g.TOP)
-      g.textSize(11)
-      setTracking(g, 2)
-      g.text(c.sub, 14, 34)
+      g.textSize(12)
+      setTracking(g, 1.2)
+      g.text(c.sub, 14, 31)
     }
 
     if (hasBadges) {
       let bx = 14
-      const by = c.sub ? 54 : 36
+      const by = c.sub ? 51 : 34
       if (c.b2b > 0) bx = this.drawBadge(g, bx, by, `B2B ×${c.b2b}`, GOLD, a)
       if (c.combo > 0) this.drawBadge(g, bx, by, `COMBO ×${c.combo}`, CYAN, a)
     }
@@ -668,7 +710,8 @@ export class Ui {
   private drawOverlay(g: P5.Graphics, p: P5): void {
     const a = this.overlay.t
     if (a <= 0.004) return
-    const titleCol = this.overlay.kind === 'over' ? RED : UI.accent
+    const OVERLAY_COLOR: Record<OverlayState['kind'], RGB> = { over: RED, complete: GOLD, pause: UI.accent }
+    const titleCol = OVERLAY_COLOR[this.overlay.kind]
     const rm = settings.reducedMotionActive
     const w = p.width
     const h = p.height

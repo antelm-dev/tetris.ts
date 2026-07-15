@@ -1,6 +1,5 @@
 import type P5 from 'p5'
 import { mix, type RGB } from '../core/color'
-import { clamp01 } from '../core/ease'
 import { CELL, COLS, ROWS } from '../core/geometry'
 
 /**
@@ -117,7 +116,6 @@ export class Background {
    */
   public draw(p: P5): void {
     this.drawGradient(p)
-    // this.drawOrbs(p)
   }
 
   private drawGradient(p: P5): void {
@@ -143,36 +141,6 @@ export class Background {
     p.fill(bl[0], bl[1], bl[2])
     p.vertex(-W, H)
     p.endShape(p.CLOSE)
-    p.pop()
-  }
-
-  private drawOrbs(p: P5): void {
-    const { accentA, accentB } = this.cur
-    p.push()
-    p.translate(0, 0, -520)
-    p.rotateZ(this.spin) // barely-perceptible parallax rotation of the field
-    p.noStroke()
-    p.blendMode(p.ADD)
-    for (const orb of this.orbs) {
-      const x = orb.bx + Math.sin(this.t * orb.speed + orb.phase) * orb.driftX
-      const y = orb.by + Math.cos(this.t * orb.speed * 0.8 + orb.phase) * orb.driftY
-      const breath = 0.7 + 0.3 * Math.sin(this.t * 0.6 + orb.phase)
-      const r = orb.radius * (1 + 0.12 * Math.sin(this.t * 0.5 + orb.phase)) * (1 + this.pulse * 0.25)
-      const t = clamp01(orb.bias + 0.25 * Math.sin(this.t * 0.4 + orb.phase))
-      const col = mix(accentA, accentB, t)
-      const gain = breath * (1 + this.pulse * 1.3)
-      p.push()
-      p.translate(x, y, 0)
-      // Three stacked discs fake a soft radial falloff.
-      p.fill(col[0], col[1], col[2], 9 * gain)
-      p.circle(0, 0, r * 2)
-      p.fill(col[0], col[1], col[2], 13 * gain)
-      p.circle(0, 0, r * 1.25)
-      p.fill(col[0], col[1], col[2], 18 * gain)
-      p.circle(0, 0, r * 0.6)
-      p.pop()
-    }
-    p.blendMode(p.BLEND)
     p.pop()
   }
 }

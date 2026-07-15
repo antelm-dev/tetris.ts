@@ -93,11 +93,11 @@ const emptyDraft = (): MoveDraft => ({ lines: -1, b2b: 0, combo: 0, perfectClear
 const HUD_PAD = 16 // outer margin from the window edge
 const TITLEBAR_H = 34 // custom frameless titlebar in styles.css
 const HUD_MIN_W = 120
-const HUD_MAX_W = 220
-const HUD_PAD_IN = 12 // inner panel padding
-const HUD_PRIMARY_ROW_H = 48 // Score + Level, side by side
-const HUD_ROW_GAP = 8
-const HUD_SECONDARY_ROW_H = 32 // Best + Lines, side by side
+const HUD_MAX_W = 200
+const HUD_PAD_IN = 8 // inner panel padding
+const HUD_PRIMARY_ROW_H = 34 // Score + Level, side by side
+const HUD_ROW_GAP = 4
+const HUD_SECONDARY_ROW_H = 26 // Best + Lines, side by side
 const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H + HUD_ROW_GAP + HUD_SECONDARY_ROW_H
 const HUD_CALLOUT_GAP = 8
 /** How much the value pulses on a change — reduced-motion drops this to 0. */
@@ -378,10 +378,10 @@ export class Ui {
     g.translate(HUD_PAD, chromeTop())
     g.scale(scale)
 
-    panel(g, 0, 0, w, HUD_PANEL_H, { r: 12, fill: PANEL, fillA: 232, strokeA: 82 })
+    panel(g, 0, 0, w, HUD_PANEL_H, { r: 10, fill: PANEL, fillA: 232, strokeA: 82 })
 
     const innerW = w - HUD_PAD_IN * 2
-    const primaryGap = 16
+    const primaryGap = 10
     const primaryColW = (innerW - primaryGap) / 2
     this.drawPrimaryStat(g, this.stats.score, HUD_PAD_IN, HUD_PAD_IN, primaryColW, accent)
     this.drawPrimaryStat(g, this.stats.level, HUD_PAD_IN + primaryColW + primaryGap, HUD_PAD_IN, primaryColW, accent)
@@ -414,20 +414,20 @@ export class Ui {
     const b = hump(s.bump)
     const col = mix(FG, accent, b)
     const scale = 1 + (settings.reducedMotionActive ? 0 : b * PULSE_SCALE_PRIMARY)
-    const valueSize = 24
+    const valueSize = 22
     g.push()
     g.noStroke()
     g.fill(col[0], col[1], col[2])
-    g.textAlign(g.CENTER, g.BASELINE)
+    g.textAlign(g.CENTER, g.TOP)
     g.textSize(valueSize)
     setTracking(g, 0)
-    const fittedSize = Math.max(15, valueSize * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
+    const fittedSize = Math.max(14, valueSize * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
     g.textSize(fittedSize)
     const value = truncate(g, s.value, w)
     const dc = g.drawingContext as CanvasRenderingContext2D
     dc.shadowColor = `rgba(${accent[0]}, ${accent[1]}, ${accent[2]}, 0.35)`
     dc.shadowBlur = 12
-    g.translate(cx, y + HUD_PRIMARY_ROW_H - 3)
+    g.translate(cx, y + 12)
     g.scale(scale)
     g.text(value, 0, 0)
     g.pop()
@@ -435,7 +435,7 @@ export class Ui {
 
   /** Best + Lines, side by side, dimmer and smaller — secondary information. */
   private drawSecondaryRow(g: P5.Graphics, x: number, y: number, w: number, accent: RGB): void {
-    const colGap = 12
+    const colGap = 8
     const colW = (w - colGap) / 2
     this.drawSecondaryStat(g, this.stats.best, x, y, colW, accent)
     this.drawSecondaryStat(g, this.stats.lines, x + colW + colGap, y, colW, accent)
@@ -459,12 +459,12 @@ export class Ui {
     g.noStroke()
     g.fill(col[0], col[1], col[2], 245)
     g.textAlign(g.CENTER, g.TOP)
-    g.textSize(14)
+    g.textSize(13)
     setTracking(g, 0)
-    const fittedSize = Math.max(10, 14 * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
+    const fittedSize = Math.max(10, 13 * Math.min(1, w / Math.max(1, g.textWidth(s.value))))
     g.textSize(fittedSize)
     const value = truncate(g, s.value, w)
-    g.translate(cx, y + 14)
+    g.translate(cx, y + 11)
     g.scale(scale)
     g.text(value, 0, 0)
     g.pop()

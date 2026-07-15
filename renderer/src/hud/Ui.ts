@@ -26,6 +26,7 @@ import {
   pushToast,
   RED,
   setTracking,
+  titlebarClearance,
   truncate,
   updateToastQueue,
   type ToastQueueState
@@ -93,32 +94,24 @@ const LINE_LABELS = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'] as const
 const emptyDraft = (): MoveDraft => ({ lines: -1, b2b: 0, combo: 0, perfectClear: false, dirty: false })
 
 // --- compact HUD panel layout ------------------------------------------------
-const HUD_PAD = 16 // outer margin from the window edge
-const TITLEBAR_H = 34 // custom frameless titlebar in styles.css
+const HUD_PAD = 16
 const HUD_MIN_W = 120
 const HUD_MAX_W = 200
-const HUD_PAD_IN = 8 // inner panel padding
-const HUD_PRIMARY_ROW_H = 34 // Score + Level, side by side
+const HUD_PAD_IN = 8
+const HUD_PRIMARY_ROW_H = 34
 const HUD_ROW_GAP = 4
-const HUD_SECONDARY_ROW_H = 26 // Best + Lines, side by side
+const HUD_SECONDARY_ROW_H = 26
 const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H + HUD_ROW_GAP + HUD_SECONDARY_ROW_H
 const HUD_CALLOUT_GAP = 8
-/** How much the value pulses on a change — reduced-motion drops this to 0. */
+const MODE_LABEL_CLEARANCE = 20
 const PULSE_SCALE_PRIMARY = 0.22
 const PULSE_SCALE_SECONDARY = 0.12
-/** Half the `drawPanel` frame's `CELL*3.4` plane — keeps the HUD clear of the hold panel. */
 const SIDE_PANEL_HALF = CELL * 1.7
 const SIDE_PANEL_LABEL_GAP = 14
 
 const START_HINT_HOLD = 4.5
 const START_HINT_TEXT = 'TAB CONTROLS  ·  ESC PAUSE'
 
-/** Titlebar is hidden in fullscreen (see `body.is-fullscreen` in styles.css). */
-function titlebarClearance(): number {
-  return document.body.classList.contains('is-fullscreen') ? 0 : TITLEBAR_H
-}
-
-/** Top edge for top-anchored chrome — clears the titlebar when it is visible. */
 function chromeTop(): number {
   return titlebarClearance() + HUD_PAD
 }
@@ -409,10 +402,10 @@ export class Ui {
     const w = hudLocalWidth(p, scale)
 
     g.push()
-    g.translate(HUD_PAD, chromeTop())
+    g.translate(HUD_PAD, chromeTop() + MODE_LABEL_CLEARANCE)
     g.scale(scale)
 
-    panelLabel(g, this.mode.shortLabel, w / 2, -6, UI.accent, 0.75)
+    panelLabel(g, this.mode.shortLabel, w / 2, -8, UI.accent, 0.75)
     panel(g, 0, 0, w, HUD_PANEL_H, { r: 10, fill: PANEL, fillA: 232, strokeA: 82 })
 
     const innerW = w - HUD_PAD_IN * 2

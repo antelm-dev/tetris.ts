@@ -30,6 +30,7 @@ import {
   scrollIntoView,
   sectionLabel,
   setTracking,
+  titlebarClearance,
   unclip,
   updateScroll,
   updateToastQueue,
@@ -110,10 +111,8 @@ const ROW_GAP = 6
 const HEADING_H = 30
 const TITLE_H = 104
 const FOOTER_H = 44
-/** Outer margin kept clear around the card, split from the old combined shrink-to-fit formula. */
 const CARD_MARGIN_X = 20
-const CARD_MARGIN_Y = 45
-/** Never show fewer than this many rows' worth of the settings list at once. */
+const CARD_MARGIN_Y = 24
 const MIN_VIEWPORT_H = ROW_H * 3
 const WHEEL_STEP = 0.5
 const INTENSITY_STEP = 0.1
@@ -121,7 +120,8 @@ const RESET_CONFIRM_WINDOW = 4
 const PRIMARY_TEXT_SIZE = 17
 const PRIMARY_IDLE_WASH_A = 26
 const PRIMARY_IDLE_STROKE_A = 70
-const TOAST_ANCHOR_Y = 54
+const TOAST_HALF_H = 24
+const TOAST_PAD = 12
 const SCROLL_INDICATOR_X = CARD_W - 14
 
 const DIM: RGB = [4, 6, 12]
@@ -529,11 +529,14 @@ export class Menu {
     // Width sets the scale; height only decides how much of the body shows at
     // once — a genuinely scrollable viewport instead of shrinking the text.
     const s = Math.min(1, (w - 2 * CARD_MARGIN_X) / CARD_W)
-    const availLocalH = (h - 2 * CARD_MARGIN_Y) / s
+    const marginTop = titlebarClearance() + CARD_MARGIN_Y
+    const marginBottom = CARD_MARGIN_Y
+    const bandH = h - marginTop - marginBottom
+    const availLocalH = bandH / s
     const viewportH = Math.max(MIN_VIEWPORT_H, Math.min(availLocalH - TITLE_H - FOOTER_H, bodyH))
     const cardH = TITLE_H + viewportH + FOOTER_H
     const originX = w / 2 - (CARD_W * s) / 2
-    const originY = h / 2 - (cardH * s) / 2 + (rm ? 0 : (1 - a) * 10)
+    const originY = marginTop + (bandH - cardH * s) / 2 + (rm ? 0 : (1 - a) * 10)
 
     this.scroll.viewport = viewportH
     this.scroll.content = bodyH
@@ -575,13 +578,7 @@ export class Menu {
     this.drawFooter(g, cardH, a)
     g.pop()
 
-    drawToast(
-      g,
-      w,
-      this.toasts.active,
-      UI.accent,
-      document.body.classList.contains('is-fullscreen') ? 20 : TOAST_ANCHOR_Y
-    )
+    drawToast(g, w, this.toasts.active, UI.accent, titlebarClearance() + TOAST_PAD + TOAST_HALF_H)
 
     setTracking(g, 0) // don't leak spacing into the next frame
     composite(p, g)

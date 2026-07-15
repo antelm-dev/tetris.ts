@@ -28,10 +28,8 @@ export function fitScale(p: P5): number {
 const BOARD_CONTENT_W = (COLS + 12) * CELL
 const BOARD_CONTENT_H = (ROWS + 3) * CELL
 
-/** The bot board never draws larger than this fraction of the player's scale — secondary, not primary, focus. */
-export const VERSUS_BOT_SCALE_RATIO = 0.62
-/** Fraction of the window's width given to the player's column; the bot gets the rest. */
-const PLAYER_COLUMN_FRACTION = 0.6
+/** Fraction of the window's width given to each board's column — an even split. */
+const COLUMN_FRACTION = 0.5
 
 /** Scale that fits one board's content into a `columnW`×`h` cell of the grid. */
 function columnFitScale(columnW: number, h: number): number {
@@ -39,11 +37,10 @@ function columnFitScale(columnW: number, h: number): number {
 }
 
 /**
- * A two-column grid for the Versus layout: the player's board is centred in
- * the wider left column, the bot's in the narrower right column — each
- * independently fit to its own column (not a single shared scale split
- * unevenly), so the pair uses the full window width at any aspect ratio
- * instead of clumping into a fixed-size group with dead space at the edges.
+ * A two-column grid for the Versus layout: player on the left, bot on the
+ * right, each centred in an equal-width column and drawn at the *same*
+ * scale — same size, same footprint, so the two boards read as a genuine
+ * split screen rather than one shrunk relative to the other.
  *
  * The returned `x`/`scale` are final, ready to feed straight into
  * {@link withBoard} inside an `inWorld(..., 1, ...)` call — no further
@@ -55,13 +52,11 @@ export function versusOffsets(p: Pick<P5, 'width' | 'height'>): {
 } {
   const w = p.width
   const h = p.height
-  const playerColW = w * PLAYER_COLUMN_FRACTION
-  const botColW = w - playerColW
-  const playerScale = columnFitScale(playerColW, h)
-  const botScale = Math.min(columnFitScale(botColW, h), playerScale * VERSUS_BOT_SCALE_RATIO)
+  const columnW = w * COLUMN_FRACTION
+  const scale = columnFitScale(columnW, h)
   return {
-    player: { x: -w / 2 + playerColW / 2, scale: playerScale },
-    bot: { x: w / 2 - botColW / 2, scale: botScale }
+    player: { x: -w / 2 + columnW / 2, scale },
+    bot: { x: w / 2 - columnW / 2, scale }
   }
 }
 

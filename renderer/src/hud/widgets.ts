@@ -20,6 +20,14 @@ export const MONO = 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, 
 /** Shared alpha multiplier for a disabled row/label. */
 export const DISABLED_DIM = 0.38
 
+/** Matches `#titlebar` height in `styles.css`. Hidden while `body.is-fullscreen`. */
+export const TITLEBAR_H = 34
+
+export function titlebarClearance(): number {
+  if (document.body.classList.contains('is-fullscreen')) return 0
+  return document.getElementById('titlebar') ? TITLEBAR_H : 0
+}
+
 /** Set the canvas letter-spacing (Chromium supports `ctx.letterSpacing`). */
 export function setTracking(g: P5.Graphics, px: number): void {
   ;(g.drawingContext as { letterSpacing: string }).letterSpacing = `${px}px`

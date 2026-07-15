@@ -36,6 +36,23 @@ describe('VersusMatch', () => {
     expect(match.winner).toBe('bot')
   })
 
+  it('the player pausing freezes the whole match, including the bot', () => {
+    const match = newMatch()
+    expect(match.isPaused).toBe(false)
+
+    match.player.game.events.onPause?.(true)
+    expect(match.isPaused).toBe(true)
+
+    const botScoreBefore = match.bot.game.score
+    const botFieldBefore = match.bot.game.field.slots.map((row) => [...row])
+    match.update(0.5) // enough time for gravity/the bot to normally act
+    expect(match.bot.game.score).toBe(botScoreBefore)
+    expect(match.bot.game.field.slots).toEqual(botFieldBefore)
+
+    match.player.game.events.onPause?.(false)
+    expect(match.isPaused).toBe(false)
+  })
+
   it('uses the attack table and queues garbage for the recipient, applied only at their next lock', () => {
     const match = newMatch()
     const botReceived = spyOnReceiveGarbage(match, 'bot')

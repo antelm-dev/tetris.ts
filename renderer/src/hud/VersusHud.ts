@@ -4,7 +4,7 @@ import { UI } from '../config/themes'
 import type { Game } from '../engine'
 import { chromeScale, versusOffsets } from '../scene/camera'
 import type { VersusMatch } from '../app/versus'
-import { composite, ensureBuffer, FG, MONO, panel, panelLabel, RED, setTracking } from './widgets'
+import { composite, ensureBuffer, FG, MONO, panel, panelLabel, RED, setTracking, titlebarClearance } from './widgets'
 
 /**
  * The Versus-only chrome: a compact "PLAYER"/"BOT" label + score/lines strip
@@ -17,10 +17,8 @@ import { composite, ensureBuffer, FG, MONO, panel, panelLabel, RED, setTracking 
 const LABEL_TOP = 40
 const STAT_GAP = 16
 
-/** Mirrors the titlebar-clearance convention `Ui`/`Menu` already use. */
 function chromeTop(): number {
-  const titlebar = document.body.classList.contains('is-fullscreen') ? 0 : 34
-  return titlebar + LABEL_TOP
+  return titlebarClearance() + LABEL_TOP
 }
 
 export class VersusHud {
@@ -39,6 +37,7 @@ export class VersusHud {
     this.drawSide(g, p, offsets.bot.x, 'BOT', match.bot.game, FG, scale)
 
     if (match.isOver) this.drawResult(g, p, match)
+    else if (match.isPaused) this.drawPaused(g, p)
 
     setTracking(g, 0)
     composite(p, g)
@@ -62,11 +61,27 @@ export class VersusHud {
   }
 
   private drawResult(g: P5.Graphics, p: P5, match: VersusMatch): void {
+    const won = match.winner === 'player'
+    this.drawCard(g, p, {
+      title: won ? 'YOU WIN' : 'YOU LOSE',
+      titleColor: won ? UI.accent : RED,
+      sub: `${match.player.game.score} vs ${match.bot.game.score}`,
+      hint: 'Enter to replay  ·  M for menu'
+    })
+  }
+
+  /** Mirrors Solo's pause card ("Esc to resume · Tab controls · M for menu") for the two-board layout. */
+  private drawPaused(g: P5.Graphics, p: P5): void {
+    this.drawCard(g, p, {
+      title: 'PAUSED',
+      titleColor: UI.accent,
+      hint: 'Esc to resume  ·  M for menu'
+    })
+  }
+
+  private drawCard(g: P5.Graphics, p: P5, opts: { title: string; titleColor: RGB; sub?: string; hint: string }): void {
     const w = p.width
     const h = p.height
-    const won = match.winner === 'player'
-    const title = won ? 'YOU WIN' : 'YOU LOSE'
-    const titleCol = won ? UI.accent : RED
     const scale = chromeScale(p)
 
     g.push()
@@ -76,7 +91,7 @@ export class VersusHud {
     g.pop()
 
     const cardW = 380
-    const cardH = 150
+    const cardH = opts.sub ? 150 : 118
 
     g.push()
     g.translate(w / 2, h / 2)
@@ -85,22 +100,24 @@ export class VersusHud {
     panel(g, -cardW / 2, -cardH / 2, cardW, cardH, { r: 16, fill: [16, 20, 34], fillA: 0.82 * 255, strokeA: 60 })
 
     g.noStroke()
-    g.fill(titleCol[0], titleCol[1], titleCol[2], 255)
+    g.fill(opts.titleColor[0], opts.titleColor[1], opts.titleColor[2], 255)
     g.textAlign(g.CENTER, g.CENTER)
     g.textSize(30)
     setTracking(g, 4)
-    g.text(title, -2, -34)
+    g.text(opts.title, -2, opts.sub ? -34 : -16)
 
-    g.fill(FG[0], FG[1], FG[2], 200)
-    g.textAlign(g.CENTER, g.CENTER)
-    g.textSize(12)
-    setTracking(g, 0.6)
-    g.text(`${match.player.game.score} vs ${match.bot.game.score}`, -0.5, 4)
+    if (opts.sub) {
+      g.fill(FG[0], FG[1], FG[2], 200)
+      g.textAlign(g.CENTER, g.CENTER)
+      g.textSize(12)
+      setTracking(g, 0.6)
+      g.text(opts.sub, -0.5, 4)
+    }
 
     g.fill(FG[0], FG[1], FG[2], 160)
     g.textSize(11)
     setTracking(g, 0.8)
-    g.text('Enter to replay  ·  Esc for menu', -0.5, STAT_GAP + 24)
+    g.text(opts.hint, -0.5, opts.sub ? STAT_GAP + 24 : STAT_GAP + 14)
     g.pop()
   }
 }

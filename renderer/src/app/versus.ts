@@ -156,14 +156,12 @@ export class VersusMatch {
         base.onGameOver?.(score)
         this.endMatch(side === 'player' ? 'bot' : 'player')
       },
-      ...(side === 'player'
-        ? {
-            onPause: (paused: boolean) => {
-              base.onPause?.(paused)
-              this.paused = paused
-            }
-          }
-        : {})
+      // Only the player's own pause bind (nothing ever pauses the bot's
+      // Game directly) drives the match-wide pause that freezes both sides.
+      onPause: (paused) => {
+        base.onPause?.(paused)
+        if (side === 'player') this.paused = paused
+      }
     }
   }
 }

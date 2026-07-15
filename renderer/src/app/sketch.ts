@@ -167,14 +167,19 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
         return
       }
 
-      if (scene === 'versus' && match?.isOver) {
-        // Only once the match has actually ended — dropping a live match this
-        // way would cost the player their run, unlike Solo's pause/over gate.
-        if (p.key === 'Enter' || p.key === ' ') {
+      if (scene === 'versus' && match) {
+        // Replay only once the match has actually ended — dropping a live
+        // match this way would cost the player their run.
+        if (match.isOver && (p.key === 'Enter' || p.key === ' ')) {
           startVersus(match.difficulty)
           return false
         }
-        if (p.key === 'Escape' || p.key === 'm' || p.key === 'M') openMenu()
+        // Same gate as Solo's: menu-return only from a paused or finished
+        // match. Escape itself is the player's ordinary pause bind (handled
+        // by `versusInput`, which now freezes the whole match — see
+        // `VersusMatch`'s `onPause` wiring) rather than something this
+        // handler intercepts directly.
+        if ((p.key === 'm' || p.key === 'M') && (match.isOver || match.isPaused)) openMenu()
       }
     }
 

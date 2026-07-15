@@ -1,7 +1,7 @@
 # tetris.ts
 
 <p align="center">
-  <img src="docs/demo.gif" alt="tetris.ts — the menu, then a game in progress" width="340">
+  <img src="docs/demo.gif" alt="tetris.ts — Solo / Versus menu, then a game in progress" width="340">
 </p>
 
 A 3D Tetris (p5.js / WebGL) that builds for two targets from one codebase —

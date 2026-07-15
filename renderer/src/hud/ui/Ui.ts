@@ -1,15 +1,15 @@
 import type P5 from 'p5'
-import { mix, type RGB } from '../core/color'
-import { hump, smooth } from '../core/ease'
-import { CELL, sidePanelTop, sidePanelX } from '../core/geometry'
-import { formatClock } from '../core/time'
-import { BIND_LABELS, BINDS, keyLabel } from '../config/keymap'
-import { settings } from '../config/settings'
-import { PALETTE, UI } from '../config/themes'
-import type { PieceName } from '../engine'
-import { MODES } from '../engine/modes'
-import type { ModeDef } from '../engine/modes'
-import { chromeScale, fitScale } from '../scene/camera'
+import { mix, type RGB } from '../../core/color'
+import { hump, smooth } from '../../core/ease'
+import { sidePanelTop, sidePanelX } from '../../core/geometry'
+import { formatClock } from '../../core/time'
+import { BIND_LABELS, BINDS, keyLabel } from '../../config/keymap'
+import { settings } from '../../config/settings'
+import { PALETTE, UI } from '../../config/themes'
+import type { PieceName } from '../../engine'
+import { MODES } from '../../engine/modes'
+import type { ModeDef } from '../../engine/modes'
+import { chromeScale, fitScale } from '../../scene/camera'
 import {
   BAR,
   composite,
@@ -26,11 +26,32 @@ import {
   pushToast,
   RED,
   setTracking,
-  titlebarClearance,
   truncate,
   updateToastQueue,
   type ToastQueueState
-} from './widgets'
+} from '../widgets'
+import {
+  chromeTop,
+  CYAN,
+  emptyDraft,
+  GOLD,
+  HUD_CALLOUT_GAP,
+  HUD_PAD,
+  HUD_PAD_IN,
+  HUD_PANEL_H,
+  HUD_PRIMARY_ROW_H,
+  HUD_ROW_GAP,
+  hudLocalWidth,
+  LINE_LABELS,
+  MODE_LABEL_CLEARANCE,
+  PULSE_SCALE_PRIMARY,
+  PULSE_SCALE_SECONDARY,
+  SIDE_PANEL_HALF,
+  SIDE_PANEL_LABEL_GAP,
+  START_HINT_HOLD,
+  START_HINT_TEXT
+} from './model'
+import type { LegendEntry, MoveCallout, MoveDraft, OverlayState, Stat, StatKey } from './types'
 
 /**
  * The game's chrome — score HUD, controls legend, pause/game-over overlay and
@@ -41,92 +62,6 @@ import {
  * (see {@link Ui.paint}). Only the frameless titlebar remains in HTML/CSS, so it
  * can keep its native `-webkit-app-region: drag` behaviour.
  */
-
-type StatKey = 'score' | 'best' | 'level' | 'lines'
-
-interface Stat {
-  label: string
-  value: string
-  /** Decays 1 → 0; drives the brief scale/colour pulse on a value change. */
-  bump: number
-}
-
-interface OverlayState {
-  title: string
-  sub: string
-  kind: 'pause' | 'over' | 'complete'
-  shown: boolean
-  t: number // eased opacity, 0 → 1
-}
-
-/** Draft filled by spin/clear/B2B/combo/PC hooks in one push, flushed in update. */
-interface MoveDraft {
-  spin?: PieceName
-  lines: number
-  b2b: number
-  combo: number
-  perfectClear: boolean
-  dirty: boolean
-}
-
-interface MoveCallout {
-  title: string
-  sub: string
-  b2b: number
-  combo: number
-  color: RGB
-  life: number
-  appear: number
-  pop: number
-}
-
-interface LegendEntry {
-  keys: string[]
-  label: string
-  keyW: number[]
-  width: number
-}
-
-const GOLD: RGB = [255, 224, 130]
-const CYAN: RGB = [140, 235, 255]
-const LINE_LABELS = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'] as const
-
-const emptyDraft = (): MoveDraft => ({ lines: -1, b2b: 0, combo: 0, perfectClear: false, dirty: false })
-
-// --- compact HUD panel layout ------------------------------------------------
-const HUD_PAD = 16
-const HUD_MIN_W = 120
-const HUD_MAX_W = 200
-const HUD_PAD_IN = 8
-const HUD_PRIMARY_ROW_H = 34
-const HUD_ROW_GAP = 4
-const HUD_SECONDARY_ROW_H = 26
-const HUD_PANEL_H = HUD_PAD_IN * 2 + HUD_PRIMARY_ROW_H + HUD_ROW_GAP + HUD_SECONDARY_ROW_H
-const HUD_CALLOUT_GAP = 8
-const MODE_LABEL_CLEARANCE = 20
-const PULSE_SCALE_PRIMARY = 0.22
-const PULSE_SCALE_SECONDARY = 0.12
-const SIDE_PANEL_HALF = CELL * 1.7
-const SIDE_PANEL_LABEL_GAP = 14
-
-const START_HINT_HOLD = 4.5
-const START_HINT_TEXT = 'TAB CONTROLS  ·  ESC PAUSE'
-
-function chromeTop(): number {
-  return titlebarClearance() + HUD_PAD
-}
-
-/**
- * Local width of the compact HUD at `chromeScale` 1. Widest local size that
- * still keeps the scaled panel clear of the hold frame.
- */
-function hudLocalWidth(p: P5, scale: number): number {
-  const s = fitScale(p)
-  const holdFrameLeftX = p.width / 2 - (sidePanelX() + SIDE_PANEL_HALF) * s
-  const maxScreenW = holdFrameLeftX - HUD_PAD * 2
-  return Math.max(HUD_MIN_W, Math.min(HUD_MAX_W, maxScreenW / scale))
-}
-
 export class Ui {
   private g?: P5.Graphics
   private readonly stats: Record<StatKey, Stat> = {
@@ -139,7 +74,7 @@ export class Ui {
   private readonly toasts: ToastQueueState = createToastQueue()
   /** The one-shot "Tab controls · Esc pause" hint shown at the start of a run. */
   private readonly startHint = { life: 0, appear: 0 }
-  private draft = emptyDraft()
+  private draft: MoveDraft = emptyDraft()
   private readonly callout: MoveCallout = {
     title: '',
     sub: '',

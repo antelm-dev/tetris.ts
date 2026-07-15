@@ -1,10 +1,10 @@
 import type P5 from 'p5'
-import type { RGB } from '../core/color'
-import { UI } from '../config/themes'
-import type { Game } from '../engine'
-import { chromeScale, versusOffsets } from '../scene/camera'
-import type { VersusMatch } from '../app/versus'
-import { composite, ensureBuffer, FG, MONO, panel, panelLabel, RED, setTracking, titlebarClearance } from './widgets'
+import type { RGB } from '../../core/color'
+import { UI } from '../../config/themes'
+import type { Game } from '../../engine'
+import { chromeScale, versusOffsets } from '../../scene/camera'
+import type { VersusMatch } from '../../app/versus'
+import { composite, ensureBuffer, FG, MONO, panel, panelLabel, RED, setTracking, titlebarClearance } from '../widgets'
 
 /**
  * The Versus-only chrome: a compact "PLAYER"/"BOT" label + score/lines strip

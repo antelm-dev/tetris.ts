@@ -1,8 +1,9 @@
 import type { Bind } from '../../config/keymap'
 import type { BotDifficulty } from '../../bot/types'
 import type { ModeId } from '../../engine/modes'
+import type { StatisticsState } from '../../app/statistics'
 
-export type Screen = 'main' | 'solo' | 'settings' | 'versus'
+export type Screen = 'main' | 'solo' | 'statistics' | 'settings' | 'versus'
 
 export interface Rect {
   x: number
@@ -15,6 +16,7 @@ export type RowId =
   | 'solo'
   | 'versus'
   | 'settings'
+  | 'statistics'
   | 'quit'
   | 'theme'
   | 'reset'
@@ -24,6 +26,15 @@ export type RowId =
   | 'comfort:screenShake'
   | 'comfort:effects'
   | 'comfort:hints'
+  | 'gameplay:das'
+  | 'gameplay:arr'
+  | 'gameplay:ghost'
+  | 'gameplay:vibration'
+  | 'touch:mode'
+  | 'touch:layout'
+  | 'audio:music'
+  | 'audio:effects'
+  | 'audio:mute'
   | 'versus:difficulty'
   | 'versus:start'
   | 'versus:back'
@@ -33,7 +44,7 @@ export interface Row {
   id: RowId
   label: string
   /** How the right-hand side of the row renders and what Enter/←/→ do. */
-  kind: 'action' | 'theme' | 'bind' | 'stepper' | 'toggle'
+  kind: 'action' | 'theme' | 'bind' | 'stepper' | 'toggle' | 'display'
   disabled?: boolean
   /** Small pill on the right — e.g. a Solo mode's line/time target. */
   tag?: string
@@ -42,7 +53,11 @@ export interface Row {
   emphasis?: 'primary' | 'secondary'
 }
 
-export type Entry = { kind: 'heading'; label: string } | { kind: 'gap'; h: number } | { kind: 'row'; row: Row }
+export type Entry =
+  | { kind: 'heading'; label: string }
+  | { kind: 'gap'; h: number }
+  | { kind: 'row'; row: Row }
+  | { kind: 'stat'; label: string; value: string }
 
 export interface MenuHandlers {
   /** Start (or restart) a single-player game in the chosen Solo mode. */
@@ -51,4 +66,6 @@ export interface MenuHandlers {
   onVersus: (difficulty: BotDifficulty) => void
   /** Quit the app; the row is only shown when this is provided. */
   onQuit?: () => void
+  /** Read the latest local career totals whenever the Statistics screen opens or repaints. */
+  getStatistics: () => StatisticsState
 }

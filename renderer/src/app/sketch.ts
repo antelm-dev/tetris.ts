@@ -19,6 +19,10 @@ import type { HighScores, Host } from './host'
 import { bestScoreOf, beatenBannerText, EMPTY_RECORDS, type RecordsState } from './records'
 import { VersusMatch, type VersusSide } from './versus'
 import type { BotDifficulty } from '../bot/types'
+import { browserStatistics } from './statistics'
+import { settings } from '../config/settings'
+import { TouchControls } from '../input/TouchControls'
+import { AudioManager } from '../audio/AudioManager'
 
 /**
  * The composition root: owns the engine and every presentation object, wires
@@ -39,7 +43,7 @@ type Scene = 'menu' | 'play' | 'versus'
 function drawVersusBoard(p: P5, side: VersusSide): void {
   drawWell(p)
   drawLockedField(p, side.game.field)
-  drawGhost(p, side.game, side.motion.x)
+  if (settings.ghost) drawGhost(p, side.game, side.motion.x)
   drawActive(p, side.game, side.motion.x, side.motion.y, side.motion.pop)
   side.flashes.draw(p)
 
@@ -54,7 +58,7 @@ function drawVersusBoard(p: P5, side: VersusSide): void {
   side.fx.draw(p)
 }
 
-const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
+const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false): P5 => {
   // Every piece of state the sketch owns is built here, so a second canvas gets
   // its own engine rather than sharing one through the module.
   const game = new Game({ width: COLS, height: ROWS })
@@ -66,6 +70,26 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
   const motion = new PieceMotion()
   const input = new Input(game)
   const versusHud = new VersusHud()
+  const statistics = browserStatistics()
+  const touch = web ? new TouchControls(el) : undefined
+
+  // One `AudioManager` for the whole sketch — shared by Solo and both sides of
+  // a Versus match (see `app/versus.ts`) rather than one per `Game`. Web Audio
+  // requires a user gesture before it can start; `unlock()` is deferred to the
+  // very first pointer/key interaction anywhere, not tied to a specific
+  // control, since the menu itself is the first thing on screen.
+  const audio = new AudioManager()
+  const unlockAudio = (): void => void audio.unlock()
+  window.addEventListener('pointerdown', unlockAudio, { once: true })
+  window.addEventListener('keydown', unlockAudio, { once: true })
+  audio.setMusicVolume(settings.musicVolume)
+  audio.setEffectsVolume(settings.effectsVolume)
+  audio.setMuted(settings.muted)
+  settings.subscribe((s) => {
+    audio.setMusicVolume(s.musicVolume)
+    audio.setEffectsVolume(s.effectsVolume)
+    audio.setMuted(s.muted)
+  })
 
   let scene: Scene = 'menu'
   // Cached from the last fetch/push so a mode switch can seed its Best/Time
@@ -87,6 +111,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
     ui.setBest(bestScoreOf(records, modeId))
     game.start()
     input.attach()
+    touch?.show(input)
   }
 
   const teardownVersus = (): void => {
@@ -98,14 +123,16 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
   const startVersus = (difficulty: BotDifficulty): void => {
     teardownVersus()
     scene = 'versus'
-    match = new VersusMatch(difficulty)
+    match = new VersusMatch(difficulty, { audio })
     versusInput = new Input(match.player.game)
     versusInput.attach()
+    touch?.show(versusInput)
   }
 
   const openMenu = (): void => {
     scene = 'menu'
     input.detach()
+    touch?.hide()
     teardownVersus()
     ui.hideOverlay()
     menu.show()
@@ -114,10 +141,11 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
   const menu = new Menu({
     onSelectMode: startSolo,
     onVersus: startVersus,
+    getStatistics: () => statistics.snapshot(),
     onQuit: host?.quit
   })
 
-  wireEvents(game, { fx, ui, flashes, motion, gravity, scores })
+  wireEvents(game, { fx, ui, flashes, motion, gravity, scores, statistics, audio })
 
   return new P5((p: P5) => {
     p.windowResized = (): void => {
@@ -138,12 +166,16 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
       // this is the mode currently being played) surfaces as a banner.
       void scores
         ?.get()
-        .then((r) => (records = r))
+        .then((r) => {
+          records = r
+          statistics.mergeRecords(r)
+        })
         .catch(() => {
           // Records load is best-effort; the game stays playable without it.
         })
       scores?.onBeaten((modeId, r) => {
         records = r
+        statistics.mergeRecords(r)
         if (modeId === currentModeId) ui.showBanner(beatenBannerText(modeId, r))
       })
     }
@@ -275,7 +307,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host): P5 => {
         inWorld(p, fx, angle, scale, () => {
           drawWell(p)
           drawLockedField(p, game.field)
-          drawGhost(p, game, motion.x)
+          if (settings.ghost) drawGhost(p, game, motion.x)
           drawActive(p, game, motion.x, motion.y, motion.pop)
           flashes.draw(p)
 

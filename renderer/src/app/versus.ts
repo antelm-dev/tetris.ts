@@ -8,6 +8,7 @@ import { createBotStrategy, DIFFICULTY_CONFIG } from '../bot/difficulty'
 import type { BotDifficulty } from '../bot/types'
 import { wireEvents } from './events'
 import { Gravity, PieceMotion } from './loop'
+import type { AudioManager } from '../audio/AudioManager'
 
 /**
  * A local Versus match: one human-controlled `Game`, one bot-controlled
@@ -39,6 +40,8 @@ export interface VersusMatchOptions {
   random?: RandomFn
   /** Powers the bot strategy's noise-based placement selection. Defaults to `Math.random`. */
   strategyRandom?: RandomFn
+  /** Shared with the rest of the app — see `AudioManager`'s per-side mixing for how the bot is kept from drowning out the player. */
+  audio?: AudioManager
 }
 
 export class VersusMatch {
@@ -59,9 +62,11 @@ export class VersusMatch {
   private readonly pendingGarbage: Record<Side, number> = { player: 0, bot: 0 }
   private readonly frameAttack: Record<Side, number> = { player: 0, bot: 0 }
   private readonly lastLockSpin: Record<Side, boolean> = { player: false, bot: false }
+  private readonly audio?: AudioManager
 
   public constructor(difficulty: BotDifficulty, options: VersusMatchOptions = {}) {
     this.difficulty = difficulty
+    this.audio = options.audio
     this.player = buildSide(Math.random)
     this.bot = buildSide(options.random ?? Math.random)
 
@@ -123,7 +128,15 @@ export class VersusMatch {
   }
 
   private wireSide(side: Side, s: VersusSide): void {
-    wireEvents(s.game, { fx: s.fx, ui: s.ui, flashes: s.flashes, motion: s.motion, gravity: s.gravity })
+    wireEvents(s.game, {
+      fx: s.fx,
+      ui: s.ui,
+      flashes: s.flashes,
+      motion: s.motion,
+      gravity: s.gravity,
+      audio: this.audio,
+      side
+    })
     const base = s.game.events
 
     s.game.events = {

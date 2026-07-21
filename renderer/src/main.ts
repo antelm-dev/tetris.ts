@@ -38,5 +38,5 @@ const scores: HighScores = {
 window.addEventListener('DOMContentLoaded', () => {
   // No `Host`: there's no window to quit in a browser tab, so `Menu` hides
   // the Quit row automatically (see `hud/menu/Menu.ts`).
-  render(document.getElementById('root')!, scores)
+  render(document.getElementById('root')!, scores, undefined, true)
 })

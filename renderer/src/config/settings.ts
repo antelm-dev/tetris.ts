@@ -16,6 +16,8 @@ import { applyTheme, DEFAULT_THEME, findTheme, type ThemePreset } from './themes
  * explicit user override that no longer tracks the OS setting.
  */
 export type ReducedMotionPref = 'auto' | 'on' | 'off'
+export type TouchControlsMode = 'auto' | 'on' | 'off'
+export type TouchLayout = 'split' | 'left' | 'right'
 
 export interface ComfortSettings {
   reducedMotion: ReducedMotionPref
@@ -25,16 +27,44 @@ export interface ComfortSettings {
   effectsIntensity: number
   /** Keep the start-of-run control hint visible instead of letting it fade. */
   persistentHints: boolean
+  /** Horizontal auto-shift delay and repeat interval, in milliseconds. */
+  das: number
+  arr: number
+  ghost: boolean
+  vibration: boolean
+  touchControls: TouchControlsMode
+  touchLayout: TouchLayout
 }
 
 export const DEFAULT_COMFORT: ComfortSettings = {
   reducedMotion: 'auto',
   screenShakeIntensity: 1,
   effectsIntensity: 1,
-  persistentHints: false
+  persistentHints: false,
+  das: 150,
+  arr: 38,
+  ghost: true,
+  vibration: true,
+  touchControls: 'auto',
+  touchLayout: 'split'
 }
 
-export interface SettingsState extends ComfortSettings {
+export interface AudioSettings {
+  /** 0–1 music bus volume. */
+  musicVolume: number
+  /** 0–1 sound-effects bus volume. */
+  effectsVolume: number
+  /** Global mute — independent of (and doesn't overwrite) the stored volumes. */
+  muted: boolean
+}
+
+export const DEFAULT_AUDIO: AudioSettings = {
+  musicVolume: 0.7,
+  effectsVolume: 0.9,
+  muted: false
+}
+
+export interface SettingsState extends ComfortSettings, AudioSettings {
   theme: string
   keys: Keymap
 }
@@ -42,6 +72,8 @@ export interface SettingsState extends ComfortSettings {
 const STORAGE_KEY = 'tetris.ts:settings'
 
 const REDUCED_MOTION_PREFS = new Set<ReducedMotionPref>(['auto', 'on', 'off'])
+const TOUCH_CONTROL_MODES = new Set<TouchControlsMode>(['auto', 'on', 'off'])
+const TOUCH_LAYOUTS = new Set<TouchLayout>(['split', 'left', 'right'])
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v))
@@ -54,22 +86,53 @@ function parseComfort(record: { [K in keyof ComfortSettings]?: unknown }): Comfo
       : DEFAULT_COMFORT.reducedMotion
   const intensity = (v: unknown, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) ? clamp01(v) : fallback
+  const timing = (v: unknown, fallback: number, min: number, max: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.round(Math.max(min, Math.min(max, v))) : fallback
   return {
     reducedMotion,
     screenShakeIntensity: intensity(record.screenShakeIntensity, DEFAULT_COMFORT.screenShakeIntensity),
     effectsIntensity: intensity(record.effectsIntensity, DEFAULT_COMFORT.effectsIntensity),
     persistentHints:
-      typeof record.persistentHints === 'boolean' ? record.persistentHints : DEFAULT_COMFORT.persistentHints
+      typeof record.persistentHints === 'boolean' ? record.persistentHints : DEFAULT_COMFORT.persistentHints,
+    das: timing(record.das, DEFAULT_COMFORT.das, 50, 300),
+    arr: timing(record.arr, DEFAULT_COMFORT.arr, 10, 100),
+    ghost: typeof record.ghost === 'boolean' ? record.ghost : DEFAULT_COMFORT.ghost,
+    vibration: typeof record.vibration === 'boolean' ? record.vibration : DEFAULT_COMFORT.vibration,
+    touchControls:
+      typeof record.touchControls === 'string' && TOUCH_CONTROL_MODES.has(record.touchControls as TouchControlsMode)
+        ? (record.touchControls as TouchControlsMode)
+        : DEFAULT_COMFORT.touchControls,
+    touchLayout:
+      typeof record.touchLayout === 'string' && TOUCH_LAYOUTS.has(record.touchLayout as TouchLayout)
+        ? (record.touchLayout as TouchLayout)
+        : DEFAULT_COMFORT.touchLayout
+  }
+}
+
+function parseAudio(record: { [K in keyof AudioSettings]?: unknown }): AudioSettings {
+  const vol = (v: unknown, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? clamp01(v) : fallback
+  return {
+    musicVolume: vol(record.musicVolume, DEFAULT_AUDIO.musicVolume),
+    effectsVolume: vol(record.effectsVolume, DEFAULT_AUDIO.effectsVolume),
+    muted: typeof record.muted === 'boolean' ? record.muted : DEFAULT_AUDIO.muted
   }
 }
 
 export function parseSettings(raw: string | null): SettingsState {
-  const fallback: SettingsState = { theme: DEFAULT_THEME.id, keys: structuredClone(DEFAULT_KEYS), ...DEFAULT_COMFORT }
+  const fallback: SettingsState = {
+    theme: DEFAULT_THEME.id,
+    keys: structuredClone(DEFAULT_KEYS),
+    ...DEFAULT_COMFORT,
+    ...DEFAULT_AUDIO
+  }
   if (!raw) return fallback
   try {
     const saved: unknown = JSON.parse(raw)
     if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return fallback
-    const record = saved as { theme?: unknown; keys?: unknown } & { [K in keyof ComfortSettings]?: unknown }
+    const record = saved as { theme?: unknown; keys?: unknown } & { [K in keyof ComfortSettings]?: unknown } & {
+      [K in keyof AudioSettings]?: unknown
+    }
     const keys = structuredClone(DEFAULT_KEYS)
     const savedKeys = record.keys
     if (savedKeys && typeof savedKeys === 'object' && !Array.isArray(savedKeys)) {
@@ -83,7 +146,7 @@ export function parseSettings(raw: string | null): SettingsState {
       }
     }
     const themeId = typeof record.theme === 'string' ? record.theme : ''
-    return { theme: findTheme(themeId).id, keys, ...parseComfort(record) }
+    return { theme: findTheme(themeId).id, keys, ...parseComfort(record), ...parseAudio(record) }
   } catch {
     return fallback
   }
@@ -146,6 +209,42 @@ class SettingsStore {
     return this.state.persistentHints
   }
 
+  public get das(): number {
+    return this.state.das
+  }
+
+  public get arr(): number {
+    return this.state.arr
+  }
+
+  public get ghost(): boolean {
+    return this.state.ghost
+  }
+
+  public get vibration(): boolean {
+    return this.state.vibration
+  }
+
+  public get touchControls(): TouchControlsMode {
+    return this.state.touchControls
+  }
+
+  public get touchLayout(): TouchLayout {
+    return this.state.touchLayout
+  }
+
+  public get musicVolume(): number {
+    return this.state.musicVolume
+  }
+
+  public get effectsVolume(): number {
+    return this.state.effectsVolume
+  }
+
+  public get muted(): boolean {
+    return this.state.muted
+  }
+
   /** Screen-shake multiplier that also honours reduced motion (fully off, not just dampened). */
   public get shakeMultiplier(): number {
     return this.reducedMotionActive ? 0 : this.state.screenShakeIntensity
@@ -177,6 +276,52 @@ class SettingsStore {
     this.commit()
   }
 
+  public setDas(v: number): void {
+    this.state.das = Math.round(Math.max(50, Math.min(300, v)))
+    this.commit()
+  }
+
+  public setArr(v: number): void {
+    this.state.arr = Math.round(Math.max(10, Math.min(100, v)))
+    this.commit()
+  }
+
+  public setGhost(v: boolean): void {
+    this.state.ghost = v
+    this.commit()
+  }
+
+  public setVibration(v: boolean): void {
+    this.state.vibration = v
+    this.commit()
+  }
+
+  public setTouchControls(v: TouchControlsMode): void {
+    this.state.touchControls = v
+    this.commit()
+  }
+
+  public setTouchLayout(v: TouchLayout): void {
+    this.state.touchLayout = v
+    this.commit()
+  }
+
+  public setMusicVolume(v: number): void {
+    this.state.musicVolume = clamp01(v)
+    this.commit()
+  }
+
+  public setEffectsVolume(v: number): void {
+    this.state.effectsVolume = clamp01(v)
+    this.commit()
+  }
+
+  /** Toggling mute never touches the stored volumes — unmuting restores them exactly. */
+  public setMuted(v: boolean): void {
+    this.state.muted = v
+    this.commit()
+  }
+
   /**
    * Bind `key` to `bind` as its only key, stealing it from any other action
    * that already claimed it — two actions sharing a key would make the input
@@ -199,7 +344,12 @@ class SettingsStore {
   }
 
   public reset(): void {
-    this.state = { theme: DEFAULT_THEME.id, keys: structuredClone(DEFAULT_KEYS), ...DEFAULT_COMFORT }
+    this.state = {
+      theme: DEFAULT_THEME.id,
+      keys: structuredClone(DEFAULT_KEYS),
+      ...DEFAULT_COMFORT,
+      ...DEFAULT_AUDIO
+    }
     applyTheme(this.state.theme)
     this.commit()
   }

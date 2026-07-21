@@ -11,11 +11,13 @@ import type { Ui } from '../hud/ui'
 import type { Gravity, PieceMotion } from './loop'
 import type { HighScores } from './host'
 import { bestScoreOf, completionSubmission, gameOverSubmission, type SubmitPayload } from './records'
+import type { StatisticsStore } from './statistics'
+import type { AudioManager, Side } from '../audio/AudioManager'
 
 /**
  * The translation layer between the engine and the presentation: every hook the
- * `Game` fires is turned into particles, screen-shake, flashes and HUD updates
- * here, and nowhere else. The engine knows none of these exist.
+ * `Game` fires is turned into particles, screen-shake, flashes, HUD updates and
+ * (via `audio`) sound here, and nowhere else. The engine knows none of these exist.
  */
 export interface Presentation {
   fx: Effects
@@ -24,10 +26,14 @@ export interface Presentation {
   motion: PieceMotion
   gravity: Gravity
   scores?: HighScores
+  statistics?: StatisticsStore
+  audio?: AudioManager
+  /** Which Versus board this is — omitted (or `'player'`) for Solo. See `AudioManager`'s per-side mixing. */
+  side?: Side
 }
 
 export function wireEvents(game: Game, view: Presentation): void {
-  const { fx, ui, flashes, motion, gravity, scores } = view
+  const { fx, ui, flashes, motion, gravity, scores, statistics, audio, side } = view
 
   // Comfort-setting multipliers live at this seam rather than inside `Effects`
   // itself, so its API stays untouched: reduced motion zeroes shake entirely
@@ -42,9 +48,17 @@ export function wireEvents(game: Game, view: Presentation): void {
   game.events = {
     onSpawn: () => motion.onSpawn(),
 
-    onRotate: () => motion.onRotate(),
+    onMove: () => audio?.move(side),
+
+    onRotate: (kicked) => {
+      motion.onRotate()
+      audio?.rotate(kicked, side)
+    },
+
+    onHold: () => audio?.hold(side),
 
     onSpin: (name, lines) => {
+      if (name === 'T') statistics?.recordTSpin()
       // Extra flourish for a spin: a bright pop plus a spark burst centered
       // on the piece, so a tucked T-spin / L-spin reads as a special move.
       const ap = game.activePiece
@@ -57,10 +71,12 @@ export function wireEvents(game: Game, view: Presentation): void {
       shake(0.4)
       ui.setScore(game.score) // a spin scores even with no line clear
       ui.announceSpin(name, lines)
+      audio?.spin(name, lines, side)
     },
 
     onLock: (hard) => {
       const ap = game.activePiece
+      if (ap) statistics?.recordPiece(ap.name)
       if (ap) {
         const cells = pieceCells(ap)
         flashes.lock(cells)
@@ -70,9 +86,11 @@ export function wireEvents(game: Game, view: Presentation): void {
       }
       shake(hard ? 0.5 : 0.22)
       ui.setScore(game.score)
+      audio?.lock(hard, side)
     },
 
     onClear: (rows, count, level) => {
+      if (count === 4) statistics?.recordTetris()
       for (const r of rows) {
         flashes.clear(r)
         const { y } = cellToWorld(0, r)
@@ -86,17 +104,20 @@ export function wireEvents(game: Game, view: Presentation): void {
       ui.setLines(game.lines)
       ui.setLevel(level)
       ui.announceClear(count)
+      audio?.clear(rows, count, level, side)
     },
 
-    onPerfectClear: (lines) => {
+    onPerfectClear: (lines, level) => {
+      statistics?.recordPerfectClear()
       const gold: RGB = [255, 224, 130]
       burst(0, 0, 48, gold, 420)
       shake(0.75)
       ui.setScore(game.score)
       ui.announcePerfectClear(lines)
+      audio?.perfectClear(lines, level, side)
     },
 
-    onB2B: (chain) => {
+    onB2B: (chain, name, lines) => {
       // Reward an unbroken chain with a bright golden burst across the well,
       // scaled up slightly as the chain grows.
       const gold: RGB = [255, 224, 130]
@@ -105,22 +126,36 @@ export function wireEvents(game: Game, view: Presentation): void {
       shake(0.4 + Math.min(0.4, chain * 0.06))
       ui.setScore(game.score)
       ui.announceB2B(chain)
+      audio?.b2b(chain, name, lines, side)
     },
 
-    onCombo: (combo) => {
+    onCombo: (combo, level) => {
+      statistics?.recordCombo(combo + 1)
       // A quick cyan spark burst that grows with the combo, plus a nudge.
       const cyan: RGB = [140, 235, 255]
       burst(0, 0, 8 + combo * 2, cyan, 180 + combo * 30)
       shake(0.15 + Math.min(0.35, combo * 0.05))
       ui.setScore(game.score)
       ui.announceCombo(combo + 1)
+      audio?.combo(combo, level, side)
     },
 
-    onLevelUp: (level) => ui.setLevel(level),
+    onLevelUp: (level) => {
+      ui.setLevel(level)
+      audio?.levelUp(level, side)
+    },
 
     onGameOver: (score) => {
+      statistics?.finishRun({
+        mode: game.mode.id,
+        score,
+        lines: game.lines,
+        elapsedMs: game.elapsedMs,
+        completed: false
+      })
       shake(0.8)
       ui.showOverlay('Game Over', `Score ${score} · Space to replay · M for menu`, 'over')
+      audio?.gameOver(side)
       // A game over only counts toward a mode's record when that mode ranks
       // by score regardless of whether the run was completed (Sprint's time
       // is meaningless without a successful clear — see `gameOverSubmission`).
@@ -129,12 +164,14 @@ export function wireEvents(game: Game, view: Presentation): void {
     },
 
     onComplete: (score, elapsedMs) => {
+      statistics?.finishRun({ mode: game.mode.id, score, lines: game.lines, elapsedMs, completed: true })
       shake(0.5)
       const sub =
         game.mode.emphasis === 'time'
           ? `Time ${formatClock(elapsedMs, true)} · Space to replay · M for menu`
           : `Score ${score} · Space to replay · M for menu`
       ui.showOverlay(`${game.mode.name} Complete`, sub, 'complete')
+      audio?.complete()
       const payload = completionSubmission(game.mode.id, score, elapsedMs)
       if (payload) submitRecord(payload)
     },
@@ -142,9 +179,11 @@ export function wireEvents(game: Game, view: Presentation): void {
     onPause: (paused) => {
       if (paused) ui.showOverlay('Paused', 'Esc to resume · Tab controls · M for menu', 'pause')
       else ui.hideOverlay()
+      audio?.setPaused(paused)
     },
 
     onStart: () => {
+      statistics?.startRun()
       gravity.reset()
       flashes.reset()
       ui.setScore(0)
@@ -153,7 +192,10 @@ export function wireEvents(game: Game, view: Presentation): void {
       ui.clearMove()
       ui.hideOverlay()
       ui.showStartHint()
-    }
+      audio?.start(side)
+    },
+
+    onGarbageReceived: (count) => audio?.garbageReceived(count, side)
   }
 
   /**

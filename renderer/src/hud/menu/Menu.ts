@@ -2,11 +2,14 @@ import type P5 from 'p5'
 import { mix, type RGB } from '../../core/color'
 import { clamp01, smooth } from '../../core/ease'
 import { BIND_GROUPS, BIND_LABELS, isBindable, keyLabel, type Bind } from '../../config/keymap'
-import { settings, type ReducedMotionPref } from '../../config/settings'
+import { settings, type ReducedMotionPref, type TouchControlsMode, type TouchLayout } from '../../config/settings'
 import { PALETTE, THEMES, UI } from '../../config/themes'
 import { MODE_LIST } from '../../engine/modes'
 import type { ModeId } from '../../engine/modes'
 import type { BotDifficulty } from '../../bot/types'
+import { formatClock } from '../../core/time'
+import { MODES } from '../../engine/modes'
+import { PIECE_ORDER } from '../../app/statistics'
 import {
   actionRowBackground,
   clipRect,
@@ -100,6 +103,7 @@ export class Menu {
   private valueArrows: { id: RowId; prev: Rect; next: Rect }[] = []
   /** Chosen on the Versus setup screen; session-only, not persisted. */
   private versusDifficulty: BotDifficulty = 'normal'
+  private readonly gamepadDown = new Set<string>()
 
   constructor(private readonly handlers: MenuHandlers) {}
 
@@ -129,6 +133,49 @@ export class Menu {
     if (!this.open && this.t < 0.004) this.t = 0
     this.deny = Math.max(0, this.deny - dt * 3)
     updateToastQueue(this.toasts, dt)
+    this.pollGamepads()
+  }
+
+  private pollGamepads(): void {
+    if (!this.open || typeof navigator.getGamepads !== 'function') {
+      this.gamepadDown.clear()
+      return
+    }
+    const next = new Set<string>()
+    const add = (pad: Gamepad, command: 'up' | 'down' | 'left' | 'right' | 'select' | 'back', active: boolean) => {
+      const source = `${pad.index}:${command}`
+      if (!active) return
+      next.add(source)
+      if (!this.gamepadDown.has(source)) this.gamepadCommand(command)
+    }
+    for (const pad of navigator.getGamepads()) {
+      if (!pad) continue
+      const button = (index: number): boolean => pad.buttons[index]?.pressed ?? false
+      const x = pad.axes[0] ?? 0
+      const y = pad.axes[1] ?? 0
+      add(pad, 'up', button(12) || y < -0.6)
+      add(pad, 'down', button(13) || y > 0.6)
+      add(pad, 'left', button(14) || x < -0.6)
+      add(pad, 'right', button(15) || x > 0.6)
+      add(pad, 'select', button(0))
+      add(pad, 'back', button(1))
+    }
+    this.gamepadDown.clear()
+    for (const source of next) this.gamepadDown.add(source)
+  }
+
+  private gamepadCommand(command: 'up' | 'down' | 'left' | 'right' | 'select' | 'back'): void {
+    if (this.capturing) {
+      if (command === 'back') this.capturing = undefined
+      return
+    }
+    const row = this.rows()[this.index]
+    if (command === 'up') this.move(-1)
+    else if (command === 'down') this.move(1)
+    else if (command === 'left' && row && (row.kind === 'theme' || row.kind === 'stepper')) this.adjust(row, -1)
+    else if (command === 'right' && row && (row.kind === 'theme' || row.kind === 'stepper')) this.adjust(row, 1)
+    else if (command === 'select' && row) this.activate(row)
+    else if (command === 'back') this.back()
   }
 
   // --- model -----------------------------------------------------------------
@@ -137,6 +184,7 @@ export class Menu {
       const rows: Row[] = [
         { id: 'solo', label: 'Solo', kind: 'action', emphasis: 'primary' },
         { id: 'versus', label: 'Versus', kind: 'action' },
+        { id: 'statistics', label: 'Statistics', kind: 'action' },
         { id: 'settings', label: 'Settings', kind: 'action' }
       ]
       if (this.handlers.onQuit) rows.push({ id: 'quit', label: 'Quit', kind: 'action' })
@@ -164,6 +212,47 @@ export class Menu {
       return rows.map((row) => ({ kind: 'row', row }))
     }
 
+    if (this.screen === 'statistics') {
+      const stats = this.handlers.getStatistics()
+      const pieceTotal = PIECE_ORDER.reduce((total, name) => total + stats.pieces[name], 0)
+      const pieceRows: Entry[] = PIECE_ORDER.map((name) => {
+        const count = stats.pieces[name]
+        const percent = pieceTotal === 0 ? 0 : Math.round((count / pieceTotal) * 100)
+        return { kind: 'stat', label: name, value: `${count.toLocaleString()}  ·  ${percent}%` }
+      })
+      const historyRows: Entry[] = stats.recentGames.map((run) => ({
+        kind: 'stat',
+        label: `${MODES[run.mode].shortLabel}${run.completed ? ' ✓' : ''} · ${run.lines} lines`,
+        value: `${run.score.toLocaleString()} · ${formatClock(run.elapsedMs)}`
+      }))
+
+      return [
+        { kind: 'heading', label: 'Career' },
+        { kind: 'stat', label: 'Games played', value: stats.gamesPlayed.toLocaleString() },
+        { kind: 'stat', label: 'Total play time', value: this.duration(stats.totalPlayTimeMs) },
+        { kind: 'stat', label: 'Best score', value: stats.bestScore.toLocaleString() },
+        {
+          kind: 'stat',
+          label: 'Best Sprint',
+          value: stats.bestSprintMs === null ? '—' : formatClock(stats.bestSprintMs, true)
+        },
+        { kind: 'gap', h: 8 },
+        { kind: 'heading', label: 'Highlights' },
+        { kind: 'stat', label: 'Tetrises', value: stats.tetrises.toLocaleString() },
+        { kind: 'stat', label: 'T-spins', value: stats.tSpins.toLocaleString() },
+        { kind: 'stat', label: 'Perfect clears', value: stats.perfectClears.toLocaleString() },
+        { kind: 'stat', label: 'Max combo', value: stats.maxCombo.toLocaleString() },
+        { kind: 'gap', h: 8 },
+        { kind: 'heading', label: `Piece distribution · ${pieceTotal.toLocaleString()} locked` },
+        ...pieceRows,
+        { kind: 'gap', h: 8 },
+        { kind: 'heading', label: 'Last 10 games' },
+        ...(historyRows.length > 0 ? historyRows : [{ kind: 'stat' as const, label: 'No games yet', value: '—' }]),
+        { kind: 'gap', h: 8 },
+        { kind: 'row', row: { id: 'back', label: 'Back', kind: 'action' } }
+      ]
+    }
+
     const controlRows: Entry[] = []
     for (const group of BIND_GROUPS) {
       controlRows.push({ kind: 'heading', label: group.label })
@@ -177,6 +266,21 @@ export class Menu {
       { kind: 'row', row: { id: 'theme', label: 'Palette', kind: 'theme' } },
       { kind: 'gap', h: 8 },
       ...controlRows,
+      { kind: 'gap', h: 8 },
+      { kind: 'heading', label: 'Gameplay' },
+      { kind: 'row', row: { id: 'gameplay:das', label: 'DAS', kind: 'stepper' } },
+      { kind: 'row', row: { id: 'gameplay:arr', label: 'ARR', kind: 'stepper' } },
+      { kind: 'row', row: { id: 'gameplay:ghost', label: 'Ghost piece', kind: 'toggle' } },
+      { kind: 'row', row: { id: 'gameplay:vibration', label: 'Vibration', kind: 'toggle' } },
+      { kind: 'gap', h: 8 },
+      { kind: 'heading', label: 'Audio' },
+      { kind: 'row', row: { id: 'audio:music', label: 'Music', kind: 'stepper' } },
+      { kind: 'row', row: { id: 'audio:effects', label: 'Effects', kind: 'stepper' } },
+      { kind: 'row', row: { id: 'audio:mute', label: 'Mute', kind: 'toggle' } },
+      { kind: 'gap', h: 8 },
+      { kind: 'heading', label: 'Web touch controls' },
+      { kind: 'row', row: { id: 'touch:mode', label: 'Visibility', kind: 'stepper' } },
+      { kind: 'row', row: { id: 'touch:layout', label: 'Layout', kind: 'stepper' } },
       { kind: 'gap', h: 8 },
       { kind: 'heading', label: 'Comfort' },
       { kind: 'row', row: { id: 'comfort:reducedMotion', label: 'Reduced motion', kind: 'stepper' } },
@@ -198,6 +302,13 @@ export class Menu {
 
   private rows(): Row[] {
     return this.entries().flatMap((e) => (e.kind === 'row' ? [e.row] : []))
+  }
+
+  private duration(ms: number): string {
+    const totalMinutes = Math.floor(Math.max(0, ms) / 60_000)
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
   }
 
   private resetArmed(): boolean {
@@ -256,9 +367,44 @@ export class Menu {
     }
   }
 
+  private adjustVolume(kind: 'music' | 'effects', step: number): void {
+    const delta = step * INTENSITY_STEP
+    if (kind === 'music') {
+      const v = clamp01(settings.musicVolume + delta)
+      settings.setMusicVolume(v)
+      pushToast(this.toasts, `Music volume: ${Math.round(v * 100)}%`)
+    } else {
+      const v = clamp01(settings.effectsVolume + delta)
+      settings.setEffectsVolume(v)
+      pushToast(this.toasts, `Effects volume: ${Math.round(v * 100)}%`)
+    }
+  }
+
   private cycleVersusDifficulty(step: number): void {
     const at = DIFFICULTY_ORDER.indexOf(this.versusDifficulty)
     this.versusDifficulty = DIFFICULTY_ORDER[(at + step + DIFFICULTY_ORDER.length) % DIFFICULTY_ORDER.length]
+  }
+
+  private adjustTiming(kind: 'das' | 'arr', step: number): void {
+    if (kind === 'das') {
+      settings.setDas(settings.das + step * 25)
+      pushToast(this.toasts, `DAS: ${settings.das} ms`)
+    } else {
+      settings.setArr(settings.arr + step * 5)
+      pushToast(this.toasts, `ARR: ${settings.arr} ms`)
+    }
+  }
+
+  private cycleTouchMode(step: number): void {
+    const order: TouchControlsMode[] = ['auto', 'on', 'off']
+    const at = order.indexOf(settings.touchControls)
+    settings.setTouchControls(order[(at + step + order.length) % order.length])
+  }
+
+  private cycleTouchLayout(step: number): void {
+    const order: TouchLayout[] = ['split', 'left', 'right']
+    const at = order.indexOf(settings.touchLayout)
+    settings.setTouchLayout(order[(at + step + order.length) % order.length])
   }
 
   /** Dispatch a `‹›` adjustment for a theme or comfort-stepper row. */
@@ -267,12 +413,23 @@ export class Menu {
     else if (row.id === 'comfort:reducedMotion') this.cycleReducedMotion(step)
     else if (row.id === 'comfort:screenShake') this.adjustIntensity('screenShake', step)
     else if (row.id === 'comfort:effects') this.adjustIntensity('effects', step)
+    else if (row.id === 'gameplay:das') this.adjustTiming('das', step)
+    else if (row.id === 'gameplay:arr') this.adjustTiming('arr', step)
+    else if (row.id === 'audio:music') this.adjustVolume('music', step)
+    else if (row.id === 'audio:effects') this.adjustVolume('effects', step)
+    else if (row.id === 'touch:mode') this.cycleTouchMode(step)
+    else if (row.id === 'touch:layout') this.cycleTouchLayout(step)
     else if (row.id === 'versus:difficulty') this.cycleVersusDifficulty(step)
   }
 
-  private toggleHints(): void {
-    settings.setPersistentHints(!settings.persistentHints)
-    pushToast(this.toasts, `Persistent hints: ${settings.persistentHints ? 'On' : 'Off'}`)
+  private toggle(row: Row): void {
+    if (row.id === 'comfort:hints') settings.setPersistentHints(!settings.persistentHints)
+    else if (row.id === 'gameplay:ghost') settings.setGhost(!settings.ghost)
+    else if (row.id === 'gameplay:vibration') settings.setVibration(!settings.vibration)
+    else if (row.id === 'audio:mute') {
+      settings.setMuted(!settings.muted)
+      pushToast(this.toasts, settings.muted ? 'Audio muted' : 'Audio unmuted')
+    }
   }
 
   private activateReset(): void {
@@ -297,7 +454,7 @@ export class Menu {
       return
     }
     if (row.kind === 'toggle') {
-      this.toggleHints()
+      this.toggle(row)
       return
     }
     if (row.kind === 'bind') {
@@ -326,6 +483,12 @@ export class Menu {
         break
       case 'settings':
         this.screen = 'settings'
+        this.index = 0
+        this.scroll.offset = 0
+        this.scroll.target = 0
+        break
+      case 'statistics':
+        this.screen = 'statistics'
         this.index = 0
         this.scroll.offset = 0
         this.scroll.target = 0
@@ -433,9 +596,9 @@ export class Menu {
     if (hit) this.activate(hit.row)
   }
 
-  /** Scroll the settings list; a no-op outside it, so it never reaches gameplay. */
+  /** Scroll long menu screens; a no-op elsewhere, so it never reaches gameplay. */
   public wheel(delta: number): void {
-    if (!this.open || this.screen !== 'settings') return
+    if (!this.open || (this.screen !== 'settings' && this.screen !== 'statistics')) return
     scrollBy(this.scroll, delta * WHEEL_STEP)
   }
 
@@ -509,6 +672,7 @@ export class Menu {
     for (const entry of entries) {
       const visible = y + entryHeight(entry) >= this.scroll.offset && y <= this.scroll.offset + viewportH
       if (visible && entry.kind === 'heading') this.drawHeading(g, entry.label, y, HEADING_H, a)
+      if (visible && entry.kind === 'stat') this.drawStat(g, entry.label, entry.value, y, a)
       if (entry.kind === 'row') {
         if (visible) {
           this.drawRow(g, entry.row, y, entry.row.id === focusedId, a)
@@ -555,7 +719,13 @@ export class Menu {
   private drawTitle(g: P5.Graphics, a: number): void {
     const accent = UI.accent
     const dc = g.drawingContext as CanvasRenderingContext2D
-    const TITLES: Record<Screen, string> = { main: 'TETRIS.TS', solo: 'SOLO', versus: 'VERSUS', settings: 'SETTINGS' }
+    const TITLES: Record<Screen, string> = {
+      main: 'TETRIS.TS',
+      solo: 'SOLO',
+      versus: 'VERSUS',
+      statistics: 'STATISTICS',
+      settings: 'SETTINGS'
+    }
     const title = TITLES[this.screen]
 
     g.push()
@@ -596,11 +766,37 @@ export class Menu {
       setTracking(g, 1.4)
       g.text('Choose how you want to play', CARD_W / 2 - 0.7, 74)
       g.pop()
+    } else if (this.screen === 'statistics') {
+      g.push()
+      g.noStroke()
+      g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
+      g.textAlign(g.CENTER, g.CENTER)
+      g.textSize(11)
+      setTracking(g, 1.4)
+      g.text('Your Solo career · saved on this device', CARD_W / 2 - 0.7, 74)
+      g.pop()
     }
   }
 
   private drawHeading(g: P5.Graphics, label: string, y: number, h: number, a: number): void {
     sectionLabel(g, label, PAD_X, y + h / 2, CARD_W - PAD_X, a)
+  }
+
+  private drawStat(g: P5.Graphics, label: string, value: string, y: number, a: number): void {
+    const x = PAD_X + 16
+    const right = CARD_W - PAD_X - 16
+    g.push()
+    g.noStroke()
+    g.fill(FG[0], FG[1], FG[2], 185 * a)
+    g.textAlign(g.LEFT, g.CENTER)
+    g.textSize(13)
+    setTracking(g, 0.4)
+    g.text(label, x, y + ROW_H / 2)
+    g.fill(UI.accent[0], UI.accent[1], UI.accent[2], 235 * a)
+    g.textAlign(g.RIGHT, g.CENTER)
+    setTracking(g, 0.2)
+    g.text(value, right, y + ROW_H / 2)
+    g.pop()
   }
 
   private drawRow(g: P5.Graphics, row: Row, y: number, focused: boolean, a: number): void {
@@ -727,6 +923,12 @@ export class Menu {
     if (id === 'comfort:reducedMotion') return reducedMotionLabel(settings.reducedMotion)
     if (id === 'comfort:screenShake') return `${Math.round(settings.screenShakeIntensity * 100)}%`
     if (id === 'comfort:effects') return `${Math.round(settings.effectsIntensity * 100)}%`
+    if (id === 'gameplay:das') return `${settings.das} ms`
+    if (id === 'gameplay:arr') return `${settings.arr} ms`
+    if (id === 'audio:music') return `${Math.round(settings.musicVolume * 100)}%`
+    if (id === 'audio:effects') return `${Math.round(settings.effectsVolume * 100)}%`
+    if (id === 'touch:mode') return settings.touchControls[0].toUpperCase() + settings.touchControls.slice(1)
+    if (id === 'touch:layout') return settings.touchLayout[0].toUpperCase() + settings.touchLayout.slice(1)
     if (id === 'versus:difficulty') return DIFFICULTY_LABELS[this.versusDifficulty]
     return ''
   }
@@ -748,7 +950,11 @@ export class Menu {
   /** An ON/OFF pill for a boolean comfort setting. */
   private drawToggleValue(g: P5.Graphics, row: Row, right: number, y: number, a: number): void {
     const cy = y + ROW_H / 2
-    const on = row.id === 'comfort:hints' && settings.persistentHints
+    const on =
+      (row.id === 'comfort:hints' && settings.persistentHints) ||
+      (row.id === 'gameplay:ghost' && settings.ghost) ||
+      (row.id === 'gameplay:vibration' && settings.vibration) ||
+      (row.id === 'audio:mute' && settings.muted)
     const label = on ? 'ON' : 'OFF'
     const color = on ? UI.accent : FG
     g.push()
@@ -817,6 +1023,7 @@ export class Menu {
       main: '↑↓ Navigate   ·   Enter Select',
       solo: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
       versus: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back',
+      statistics: 'Mouse wheel Scroll   ·   Esc Back',
       settings: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back'
     }
     const hint = FOOTER_HINTS[this.screen]

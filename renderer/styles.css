@@ -30,6 +30,86 @@ body {
   height: 100vh;
 }
 
+/* Web touch controls ------------------------------------------------------- */
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.touch-controls.is-playing.is-enabled {
+  display: block;
+}
+
+.touch-group {
+  position: absolute;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(2, 58px);
+  gap: 10px;
+}
+
+.touch-group-move {
+  left: max(18px, env(safe-area-inset-left));
+}
+
+.touch-group-action {
+  right: max(18px, env(safe-area-inset-right));
+}
+
+.touch-controls[data-layout='left'] .touch-group-action {
+  right: auto;
+  left: max(154px, calc(env(safe-area-inset-left) + 154px));
+}
+
+.touch-controls[data-layout='right'] .touch-group-move {
+  left: auto;
+  right: max(154px, calc(env(safe-area-inset-right) + 154px));
+}
+
+.touch-control {
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(238, 242, 255, 0.32);
+  border-radius: 16px;
+  background: rgba(10, 13, 24, 0.66);
+  color: var(--fg);
+  font:
+    600 23px/1 ui-monospace,
+    monospace;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touch-control:active {
+  border-color: rgba(140, 235, 255, 0.9);
+  background: rgba(80, 150, 190, 0.48);
+  transform: scale(0.94);
+}
+
+@media (max-height: 560px) {
+  .touch-group {
+    grid-template-columns: repeat(4, 48px);
+  }
+  .touch-control {
+    width: 48px;
+    height: 48px;
+    border-radius: 13px;
+  }
+  .touch-controls[data-layout='left'] .touch-group-action {
+    left: max(250px, calc(env(safe-area-inset-left) + 250px));
+  }
+  .touch-controls[data-layout='right'] .touch-group-move {
+    right: max(250px, calc(env(safe-area-inset-right) + 250px));
+  }
+}
+
 /* Custom titlebar (frameless window) --------------------------------------- */
 #titlebar {
   -webkit-app-region: drag;

@@ -27,7 +27,8 @@ const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2'
+  '.woff2': 'font/woff2',
+  '.ogg': 'audio/ogg'
 }
 
 const CLIENT_DIR = resolve(env.paths.clientDir)

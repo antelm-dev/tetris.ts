@@ -143,6 +143,26 @@ pnpm build:web
 pnpm serve:web
 ```
 
+### Docker
+
+The root Dockerfile contains separate `web` and `api` runtime targets. Compose
+starts the playable browser game on port 4000 and the Nest API on port 3000,
+with a named volume preserving web high scores across container replacement.
+
+```bash
+cp .env.docker.example .env
+# Replace JWT_SECRET in .env with a strong random value first.
+docker compose up --build -d
+```
+
+Open <http://localhost:4000>. The service health endpoints are `/healthz` for
+the web host and `/api/health` for the API.
+
+The API currently uses its explicitly development-only in-memory user store,
+so Compose defaults `API_NODE_ENV` to `development`. Set it to `production`
+only after implementing the persistent `UserRepository` described in
+`apps/api/README.md`.
+
 Pour générer les installateurs :
 
 ```bash

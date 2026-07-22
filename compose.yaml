@@ -1,0 +1,65 @@
+name: tetris-ts
+
+services:
+  web:
+    build:
+      context: .
+      target: web
+    image: tetris-ts-web:local
+    environment:
+      PORT: 4000
+    ports:
+      - "${WEB_PORT:-4000}:4000"
+    volumes:
+      - high-scores:/app/apps/tetris/server/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: api
+    image: tetris-ts-api:local
+    environment:
+      # The API deliberately rejects NODE_ENV=production until its in-memory
+      # user repository is replaced by persistent storage. Override this only
+      # after that repository exists.
+      NODE_ENV: "${API_NODE_ENV:-development}"
+      API_HOST: 0.0.0.0
+      API_PORT: 3000
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:4000}"
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env before starting Compose}"
+      JWT_ACCESS_TTL: "${JWT_ACCESS_TTL:-15m}"
+      JWT_REFRESH_TTL: "${JWT_REFRESH_TTL:-7d}"
+      WS_NAMESPACE: "${WS_NAMESPACE:-/game}"
+      ROOM_MAX_PLAYERS: "${ROOM_MAX_PLAYERS:-100}"
+    ports:
+      - "${API_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  high-scores:
+

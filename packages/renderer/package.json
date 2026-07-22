@@ -1,0 +1,25 @@
+{
+  "name": "@tetris/renderer",
+  "version": "1.0.0",
+  "description": "Host-agnostic p5 game UI, driven through HighScores/Host ports",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./styles.css",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tetris/bot": "workspace:*",
+    "@tetris/engine": "workspace:*",
+    "p5": "^1.11.3"
+  },
+  "devDependencies": {
+    "@types/p5": "^1.7.6",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  }
+}

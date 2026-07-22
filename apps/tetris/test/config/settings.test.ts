@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_AUDIO, DEFAULT_COMFORT, parseSettings, settings } from '../../renderer/src/config/settings'
-import { DEFAULT_KEYS } from '../../renderer/src/config/keymap'
-import { DEFAULT_THEME } from '../../renderer/src/config/themes'
+import { DEFAULT_AUDIO, DEFAULT_COMFORT, parseSettings, settings } from '@tetris/renderer/config/settings'
+import { DEFAULT_KEYS } from '@tetris/renderer/config/keymap'
+import { DEFAULT_THEME } from '@tetris/renderer/config/themes'
 
 describe('parseSettings', () => {
   it('returns defaults for null or empty storage', () => {

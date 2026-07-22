@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { VersusMatch } from '../../renderer/src/app/versus'
-import { mulberry32 } from '../../renderer/src/core/random'
+import { VersusMatch } from '@tetris/renderer/app/versus'
+import { mulberry32 } from '@tetris/renderer/core/random'
 
 /** Track calls to `game.receiveGarbage` without touching engine internals. */
 function spyOnReceiveGarbage(match: VersusMatch, side: 'player' | 'bot'): number[] {

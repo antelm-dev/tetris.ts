@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AudioManager } from '../../renderer/src/audio/AudioManager'
+import { AudioManager } from '@tetris/renderer/audio/AudioManager'
 import { MockAudioContext, fakeFetch } from './mocks'
 
 /**

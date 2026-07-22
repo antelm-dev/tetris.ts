@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import Field from '@tetris/engine/Field'
 import { computeAttack } from '@tetris/engine/garbage'
-import { mulberry32 } from '../../renderer/src/core/random'
+import { mulberry32 } from '@tetris/renderer/core/random'
 
 describe('computeAttack', () => {
   it('matches the attack table for plain clears', () => {

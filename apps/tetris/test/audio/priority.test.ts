@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveCluster, type ClusterAccumulator } from '../../renderer/src/audio/priority'
+import { resolveCluster, type ClusterAccumulator } from '@tetris/renderer/audio/priority'
 
 const empty = (hard = false): ClusterAccumulator => ({ hard })
 

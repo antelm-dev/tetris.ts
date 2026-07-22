@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createScrollState, scrollBy, scrollIntoView, updateScroll } from '../../renderer/src/hud/widgets'
+import { createScrollState, scrollBy, scrollIntoView, updateScroll } from '@tetris/renderer/hud/widgets/scroll'
 
 describe('scroll state', () => {
   it('clamps the scroll target to the scrollable range', () => {

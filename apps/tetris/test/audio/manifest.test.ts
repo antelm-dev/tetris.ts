@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { comboVoiceId, tierForLevel } from '../../renderer/src/audio/manifest'
+import { comboVoiceId, tierForLevel } from '@tetris/renderer/audio/manifest'
 
 describe('comboVoiceId', () => {
   it('maps 1..10 to the matching numbered voice line', () => {

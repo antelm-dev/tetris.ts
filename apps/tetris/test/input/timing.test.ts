@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ARR, DAS, SOFT_DROP, resolveHorizontal, tickRepeat } from '../../renderer/src/input/timing'
+import { ARR, DAS, SOFT_DROP, resolveHorizontal, tickRepeat } from '@tetris/renderer/input/timing'
 
 describe('resolveHorizontal', () => {
   it('returns the sole held direction', () => {

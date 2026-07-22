@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Gravity, gravityInterval } from '../../renderer/src/app/loop'
+import { Gravity, gravityInterval } from '@tetris/renderer/app/loop'
 import Game from '@tetris/engine/Game'
 import Piece from '@tetris/engine/Piece'
 

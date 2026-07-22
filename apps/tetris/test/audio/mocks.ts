@@ -6,7 +6,7 @@ import type {
   MinimalGainNode,
   MinimalOscillatorNode,
   MinimalStereoPannerNode
-} from '../../renderer/src/audio/context'
+} from '@tetris/renderer/audio/context'
 
 function param(initial = 1): MinimalAudioParam {
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { StatisticsStore, type StatisticsStorage } from '../../renderer/src/app/statistics'
+import { StatisticsStore, type StatisticsStorage } from '@tetris/renderer/app/statistics'
 
 class MemoryStorage implements StatisticsStorage {
   private readonly values = new Map<string, string>()

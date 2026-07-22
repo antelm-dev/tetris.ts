@@ -4,9 +4,10 @@
  * tier) that stay asset-agnostic and are unit-tested without touching
  * `AudioManager` or Web Audio at all.
  *
- * Files live in `renderer/public/sounds/` (copied from the project's
- * `resources/sounds/`, which is the source of truth — see the repo root) so
- * Vite serves and packages them as plain static assets: no bundler import
+ * Files live in this package's `public/sounds/` (copied from the app's
+ * `resources/sounds/`, which is the source of truth) and each host app points
+ * Vite's `publicDir` here (see each host app's `vite.config.ts`), so Vite serves and
+ * packages them as plain static assets: no bundler import
  * graph, no bindings to worry about, and `soundUrl` resolves them relative to
  * Vite's own `BASE_URL`, so a non-default `base` (see `vite.config.ts`) still
  * works in both the Electron and web builds.

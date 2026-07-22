@@ -5,7 +5,7 @@ import {
   completionSubmission,
   EMPTY_RECORDS,
   gameOverSubmission
-} from '../../renderer/src/app/records'
+} from '@tetris/renderer/app/records'
 
 describe('gameOverSubmission', () => {
   it('submits a score-ranked record for Endless, Marathon and Ultra', () => {

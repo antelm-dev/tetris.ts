@@ -5,7 +5,14 @@ dist-main
 dist-renderer
 dist-web
 release
+apps/api/dist
+packages/protocol/dist
 *.tsbuildinfo
+
+# Local environment (never commit real secrets)
+.env
+.env.local
+apps/api/.env
 
 # Generated IPC bridge (run `pnpm gen:ipc`)
 apps/tetris/main/generated

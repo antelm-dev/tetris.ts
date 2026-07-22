@@ -1,0 +1,13 @@
+{
+  "name": "@tetris/records",
+  "version": "1.0.0",
+  "description": "Shared high-score records schema, validation, and file-backed store",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    }
+  }
+}

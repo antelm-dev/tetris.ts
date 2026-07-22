@@ -8,10 +8,10 @@ release
 *.tsbuildinfo
 
 # Generated IPC bridge (run `pnpm gen:ipc`)
-main/generated
+apps/tetris/main/generated
 
 # Web target's high-score storage
-server/data
+apps/tetris/server/data
 
 # Electron run config
 electron-run-*.json

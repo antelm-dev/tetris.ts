@@ -1,0 +1,10 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+onlyBuiltDependencies:
+  - electron
+  - electron-ipc-module
+  - electron-winstaller
+  - esbuild
+  - rollup-plugin-electron-run

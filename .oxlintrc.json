@@ -17,22 +17,35 @@
     "unicorn/no-new-array": "off",
     "unicorn/require-module-specifiers": "off"
   },
-  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "dist-web", "release", "server/data"],
+  "ignorePatterns": [
+    "apps/tetris/main/generated",
+    "dist-main",
+    "dist-renderer",
+    "dist-web",
+    "release",
+    "apps/tetris/server/data"
+  ],
   "overrides": [
     {
-      "files": ["main/**/*.ts", "scripts/**/*.mjs", "server/**/*.mjs", "*.config.*", "test/**/*.ts"],
+      "files": [
+        "apps/tetris/main/**/*.ts",
+        "apps/tetris/scripts/**/*.mjs",
+        "apps/tetris/server/**/*.mjs",
+        "*.config.*",
+        "apps/tetris/test/**/*.ts"
+      ],
       "env": { "node": true }
     },
-    { "files": ["renderer/**/*.ts"], "env": { "browser": true } },
+    { "files": ["apps/tetris/renderer/**/*.ts"], "env": { "browser": true } },
     {
-      "files": ["server/**/*.mjs"],
+      "files": ["apps/tetris/server/**/*.mjs"],
       "rules": {
         "promise/no-callback-in-promise": ["error", { "exceptions": ["next"] }]
       }
     },
     { "files": ["**/*.d.ts"], "rules": { "typescript/consistent-type-imports": "off" } },
     {
-      "files": ["test/**/*.ts"],
+      "files": ["apps/tetris/test/**/*.ts"],
       "plugins": ["vitest"],
       "env": { "vitest": true },
       "rules": {

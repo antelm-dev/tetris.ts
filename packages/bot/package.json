@@ -1,0 +1,14 @@
+{
+  "name": "@tetris/bot",
+  "version": "1.0.0",
+  "description": "Heuristic Tetris bot over @tetris/engine",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@tetris/engine": "workspace:*"
+  }
+}

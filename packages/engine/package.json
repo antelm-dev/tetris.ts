@@ -1,0 +1,11 @@
+{
+  "name": "@tetris/engine",
+  "version": "1.0.0",
+  "description": "Pure, framework-free Tetris game engine",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  }
+}

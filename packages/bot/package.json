@@ -10,5 +10,11 @@
   },
   "dependencies": {
     "@tetris/engine": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
   }
 }

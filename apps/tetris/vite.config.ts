@@ -22,6 +22,10 @@ export default defineConfig(({ mode }) => {
   return {
     root: 'renderer',
     base: env.VITE_BASE || '/',
+    // Static assets (sounds) live with the shared game UI in @tetris/renderer,
+    // not in this app shell, so both the desktop and (future) web app serve the
+    // same files from one source of truth.
+    publicDir: fileURLToPath(new URL('../../packages/renderer/public', import.meta.url)),
     build: {
       outDir: isElectron ? '../dist-renderer' : '../dist-web',
       emptyOutDir: true,

@@ -1,4 +1,5 @@
-import render from './app/sketch'
+import '@tetris/renderer/styles.css'
+import { render } from '@tetris/renderer'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null
 

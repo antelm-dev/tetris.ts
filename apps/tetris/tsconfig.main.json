@@ -4,7 +4,7 @@
     "lib": ["ES2023"],
     "types": ["node", "electron"],
     "outDir": "./dist-main",
-    "rootDir": "./main",
+    "rootDir": "../..",
     "sourceMap": true
   },
   "include": ["main/**/*.ts"],

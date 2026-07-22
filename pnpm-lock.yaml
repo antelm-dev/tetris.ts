@@ -20,15 +20,12 @@ importers:
 
   apps/tetris:
     dependencies:
-      '@tetris/bot':
-        specifier: workspace:*
-        version: link:../../packages/bot
-      '@tetris/engine':
-        specifier: workspace:*
-        version: link:../../packages/engine
       '@tetris/records':
         specifier: workspace:*
         version: link:../../packages/records
+      '@tetris/renderer':
+        specifier: workspace:*
+        version: link:../../packages/renderer
       express:
         specifier: ^5.1.0
         version: 5.2.1
@@ -54,9 +51,6 @@ importers:
       '@types/node':
         specifier: ^22.8.6
         version: 22.20.1
-      '@types/p5':
-        specifier: ^1.7.6
-        version: 1.7.7
       concurrently:
         specifier: ^9.1.2
         version: 9.2.4
@@ -81,9 +75,6 @@ importers:
       oxlint:
         specifier: ^1.73.0
         version: 1.73.0
-      p5:
-        specifier: ^1.11.3
-        version: 1.11.13
       rollup:
         specifier: ^4.30.1
         version: 4.62.2
@@ -105,10 +96,47 @@ importers:
       '@tetris/engine':
         specifier: workspace:*
         version: link:../engine
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
 
-  packages/engine: {}
+  packages/engine:
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
 
-  packages/records: {}
+  packages/records:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.8.6
+        version: 22.20.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
+  packages/renderer:
+    dependencies:
+      '@tetris/bot':
+        specifier: workspace:*
+        version: link:../bot
+      '@tetris/engine':
+        specifier: workspace:*
+        version: link:../engine
+      p5:
+        specifier: ^1.11.3
+        version: 1.11.13
+    devDependencies:
+      '@types/p5':
+        specifier: ^1.7.6
+        version: 1.7.7
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vite:
+        specifier: ^7.1.7
+        version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(terser@5.49.0)
 
 packages:
 
@@ -4365,6 +4393,20 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       '@types/node': 22.20.1
+      fsevents: 2.3.3
+      jiti: 2.7.0
+      terser: 5.49.0
+
+  vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(terser@5.49.0):
+    dependencies:
+      esbuild: 0.28.1
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
+      postcss: 8.5.16
+      rollup: 4.62.2
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@types/node': 24.13.3
       fsevents: 2.3.3
       jiti: 2.7.0
       terser: 5.49.0

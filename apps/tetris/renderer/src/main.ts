@@ -1,6 +1,5 @@
-import render from './app/sketch'
-import type { HighScores } from './app/host'
-import { EMPTY_RECORDS } from './app/records'
+import '@tetris/renderer/styles.css'
+import { EMPTY_RECORDS, render, type HighScores } from '@tetris/renderer'
 
 /**
  * Solo records persisted through the small Express API (see `server/`)

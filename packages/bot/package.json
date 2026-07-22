@@ -8,11 +8,11 @@
     ".": "./src/index.ts",
     "./*": "./src/*.ts"
   },
-  "dependencies": {
-    "@tetris/engine": "workspace:*"
-  },
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tetris/engine": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

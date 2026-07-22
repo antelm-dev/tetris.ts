@@ -94,11 +94,7 @@ export class StatisticsStore {
 
   /** Preserve records earned before the career-statistics feature existed. */
   public mergeRecords(records: RecordsState): void {
-    const bestScore = Math.max(
-      records.endless?.score ?? 0,
-      records.marathon?.score ?? 0,
-      records.ultra?.score ?? 0
-    )
+    const bestScore = Math.max(records.endless?.score ?? 0, records.marathon?.score ?? 0, records.ultra?.score ?? 0)
     const bestSprintMs = records.sprint?.timeMs ?? null
     let changed = false
     if (bestScore > this.state.bestScore) {

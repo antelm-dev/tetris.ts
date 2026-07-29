@@ -31,10 +31,20 @@ export const ServerEvent = {
   /** Room membership / ready-state changed. */
   RoomState: 'server:room:state',
   GameStarted: 'server:game:started',
+  /** Echo of an accepted {@link ClientEvent.PlayerAction} sequence. */
+  ActionAcknowledged: 'server:player:action:ack',
   /** Down-sampled opponent board state (target ~5–10 Hz, never 60 Hz). */
   Snapshot: 'server:game:snapshot',
-  /** Garbage/attack routed from one player to others. */
+  /**
+   * Attack intent (row count) routed from one player toward another.
+   * Prefer {@link ServerEvent.GarbageDelivered} once holes are known.
+   */
   Attack: 'server:game:attack',
+  /**
+   * Deterministic garbage rows applied (or queued to apply) at a lock boundary,
+   * including per-row hole columns for client prediction.
+   */
+  GarbageDelivered: 'server:game:garbage',
   /** A player topped out and is out of the match. */
   Elimination: 'server:game:elimination',
   /** The match ended — carries the final standings. */

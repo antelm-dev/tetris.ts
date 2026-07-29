@@ -7,6 +7,22 @@ import type { ProtocolVersion } from './version'
  * needs the shapes, not runtime validation of its own peer.
  */
 
+/** Encoding version for a specific outbound state shape (independent of {@link ProtocolVersion}). */
+export type PayloadSchemaVersion = 1
+
+/** Wire cell values — mirrors the engine `Slot` union without importing it. */
+export type WireSlot = 0 | 'I' | 'O' | 'T' | 'L' | 'J' | 'S' | 'Z' | 'GARBAGE'
+
+export type WirePieceName = Exclude<WireSlot, 0 | 'GARBAGE'>
+
+/** Active piece on a snapshot; orientation is SRS 0–3. */
+export interface WireActivePiece {
+  name: WirePieceName
+  x: number
+  y: number
+  orientation: 0 | 1 | 2 | 3
+}
+
 /** Every server message is wrapped so the client can check compatibility and order. */
 export interface ServerEnvelope<T> {
   protocolVersion: ProtocolVersion
@@ -55,22 +71,33 @@ export interface GameStartedPayload {
 }
 
 /**
- * A compact opponent board update. Deliberately NOT a full 60 Hz board dump:
- * the realtime layer down-samples these to ~5–10 Hz per opponent. The exact
- * board encoding is intentionally left open for the next step (delta vs. RLE).
+ * Compact opponent board update. Deliberately NOT a full 60 Hz board dump:
+ * the realtime layer down-samples these to ~5–10 Hz per opponent.
+ *
+ * `board` is a full-height row-major grid of {@link WireSlot} values. Future
+ * queue / hold / bag state is intentionally omitted.
  */
 export interface SnapshotPayload {
+  schemaVersion: PayloadSchemaVersion
   roomId: string
   userId: string
-  /** Snapshot sequence for this player's stream — lets the client drop stale frames. */
+  /**
+   * Snapshot sequence for this player's stream — lets the client drop stale
+   * frames. Independent of {@link ServerEnvelope.seq}.
+   */
   seq: number
   score: number
   lines: number
   level: number
-  /** Placeholder board encoding; to be replaced with a delta/RLE format. */
-  board?: number[]
+  board: WireSlot[][]
+  activePiece?: WireActivePiece
+  gameOver: boolean
 }
 
+/**
+ * Attack intent (garbage row count). Kept for compatibility; deterministic
+ * deliveries use {@link GarbageDeliveryPayload}.
+ */
 export interface AttackPayload {
   roomId: string
   fromUserId: string
@@ -79,22 +106,54 @@ export interface AttackPayload {
   amount: number
 }
 
+/**
+ * Deterministic garbage delivery. Each row carries an explicit hole column so
+ * a future client can reproduce the board without the recipient's RNG.
+ */
+export interface GarbageDeliveryPayload {
+  schemaVersion: PayloadSchemaVersion
+  roomId: string
+  /** Per-match delivery sequence for this room. */
+  deliverySeq: number
+  fromUserId: string
+  toUserId: string
+  rows: Array<{ hole: number }>
+  /**
+   * Lock-boundary counter on the recipient when this delivery is applied
+   * (0-based count of locks after match start). Documented so clients can
+   * schedule prediction relative to the same boundary the server uses.
+   */
+  appliedAtLock: number
+}
+
 export interface EliminationPayload {
+  schemaVersion: PayloadSchemaVersion
   roomId: string
   userId: string
   /** Finishing place (1 = winner); lower is better. */
   place: number
+  reason: 'top-out'
+}
+
+export interface GameOverStanding {
+  userId: string
+  place: number
+  score: number
+  lines: number
 }
 
 export interface GameOverPayload {
+  schemaVersion: PayloadSchemaVersion
   roomId: string
-  standings: Array<{ userId: string; place: number; score: number }>
+  standings: GameOverStanding[]
   endedAt: number
 }
 
-/** Echo of an accepted client action's sequence, so clients can reconcile input. Not yet emitted. */
+/** Echo of an accepted client action's sequence, so clients can reconcile input. */
 export interface ActionAckPayload {
+  schemaVersion: PayloadSchemaVersion
   roomId: string
+  /** The client action sequence that was accepted (same as inbound `seq`). */
   seq: number
   action: GameAction
 }

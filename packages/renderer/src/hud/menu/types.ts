@@ -3,7 +3,7 @@ import type { BotDifficulty } from '@tetris/bot/types'
 import type { ModeId } from '@tetris/engine/modes'
 import type { StatisticsState } from '../../app/statistics'
 
-export type Screen = 'main' | 'solo' | 'statistics' | 'settings' | 'versus'
+export type Screen = 'main' | 'solo' | 'statistics' | 'settings' | 'versus' | 'online'
 
 export interface Rect {
   x: number
@@ -15,6 +15,7 @@ export interface Rect {
 export type RowId =
   | 'solo'
   | 'versus'
+  | 'online'
   | 'settings'
   | 'statistics'
   | 'quit'
@@ -38,6 +39,8 @@ export type RowId =
   | 'versus:difficulty'
   | 'versus:start'
   | 'versus:back'
+  | 'online:start'
+  | 'online:back'
   | `mode:${ModeId}`
 
 export interface Row {
@@ -64,6 +67,11 @@ export interface MenuHandlers {
   onSelectMode: (mode: ModeId) => void
   /** Start a local Versus match against a bot at the chosen difficulty. */
   onVersus: (difficulty: BotDifficulty) => void
+  /**
+   * Open the Online Versus lobby overlay. Omitted (or feature-flagged off)
+   * keeps the Online row hidden so Solo/local Versus stay the default (AC-05).
+   */
+  onOnlineVersus?: () => void
   /** Quit the app; the row is only shown when this is provided. */
   onQuit?: () => void
   /** Read the latest local career totals whenever the Statistics screen opens or repaints. */

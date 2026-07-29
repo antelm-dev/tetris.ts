@@ -1,10 +1,20 @@
 import '@tetris/renderer/styles.css'
-import { render } from '@tetris/renderer'
+import { render, type Host } from '@tetris/renderer'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null
 
 window.addEventListener('DOMContentLoaded', () => {
   const bridge = window.electron?.bridge
+
+  const host: Host | undefined = bridge
+    ? {
+        quit: () => bridge.window.close(),
+        // Electron has no same-origin API; point at the Nest online service.
+        apiOrigin: import.meta.env.VITE_API_ORIGIN || undefined
+      }
+    : import.meta.env.VITE_API_ORIGIN
+      ? { apiOrigin: import.meta.env.VITE_API_ORIGIN }
+      : undefined
 
   // The menu, HUD, legend, overlays and banners are drawn by p5 (see hud/);
   // the renderer only injects high-score persistence, the menu's Quit action,
@@ -15,9 +25,12 @@ window.addEventListener('DOMContentLoaded', () => {
     bridge && {
       get: () => bridge.game.getRecords(),
       submit: (payload) => bridge.game.submitRecord(payload),
-      onBeaten: (cb) => bridge.game.onRecordBeaten(({ mode, records }) => cb(mode, records))
+      onBeaten: (cb) =>
+        bridge.game.onRecordBeaten((payload: { mode: Parameters<typeof cb>[0]; records: Parameters<typeof cb>[1] }) =>
+          cb(payload.mode, payload.records)
+        )
     },
-    bridge && { quit: () => bridge.window.close() }
+    host
   )
 
   // Custom titlebar → fire-and-forget window controls (`listen` channels).
@@ -25,7 +38,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btn-full')?.addEventListener('click', () => bridge?.window.toggleFullscreen())
   $('btn-close')?.addEventListener('click', () => bridge?.window.close())
 
-  bridge?.window.onFullscreenChanged((fullscreen) => {
+  bridge?.window.onFullscreenChanged((fullscreen: boolean) => {
     document.body.classList.toggle('is-fullscreen', fullscreen)
   })
 })

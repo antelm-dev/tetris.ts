@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Game, mulberry32 } from '@tetris/engine'
 import {
   buildOnlineLobbyView,
@@ -252,5 +252,107 @@ describe('OnlineLobby overlay DOM', () => {
     lobby.dispose()
     expect(parent.querySelector('.online-lobby')).toBeNull()
     expect(document.getElementById('online-lobby-styles')).toBeNull()
+  })
+
+  it('Sign in click reaches login/connect with typed FormData', async () => {
+    const login = vi.fn(async () => undefined)
+    const connect = vi.fn(async () => undefined)
+    client = {
+      ...client,
+      login,
+      connect
+    } as unknown as OnlineClient
+
+    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
+    lobby.show()
+
+    const form = parent.querySelector<HTMLFormElement>('form[data-action="login"]')!
+    form.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'ada@example.com'
+    form.querySelector<HTMLInputElement>('input[name="password"]')!.value = 's3cret'
+    form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+
+    await vi.waitFor(() => {
+      expect(login).toHaveBeenCalledWith({ email: 'ada@example.com', password: 's3cret' })
+      expect(connect).toHaveBeenCalled()
+    })
+    lobby.dispose()
+  })
+
+  it('Register click reaches register with typed FormData', async () => {
+    const register = vi.fn(async () => undefined)
+    const login = vi.fn(async () => undefined)
+    const connect = vi.fn(async () => undefined)
+    client = {
+      ...client,
+      register,
+      login,
+      connect
+    } as unknown as OnlineClient
+
+    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
+    lobby.show()
+
+    const form = parent.querySelector<HTMLFormElement>('form[data-action="register"]')!
+    form.querySelector<HTMLInputElement>('input[name="displayName"]')!.value = 'Ada'
+    form.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'ada@example.com'
+    form.querySelector<HTMLInputElement>('input[name="password"]')!.value = 's3cret!!'
+    form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+
+    await vi.waitFor(() => {
+      expect(register).toHaveBeenCalledWith({
+        email: 'ada@example.com',
+        displayName: 'Ada',
+        password: 's3cret!!'
+      })
+      expect(login).not.toHaveBeenCalled()
+      expect(connect).toHaveBeenCalled()
+    })
+    lobby.dispose()
+  })
+
+  it('Join by ID and create room pass typed values through submit', async () => {
+    const joinRoom = vi.fn()
+    const createRoom = vi.fn()
+    state = emptyState({
+      connection: 'ready',
+      user: { id: 'u1', email: 'a@b.co', displayName: 'Ada' },
+      sessionId: 's1'
+    })
+    client = {
+      getState: () => state,
+      get user() {
+        return state.user
+      },
+      subscribe: (listener: (s: OnlineClientState) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+      joinRoom,
+      createRoom
+    } as unknown as OnlineClient
+
+    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
+    lobby.show()
+
+    const joinForm = parent.querySelector<HTMLFormElement>('form[data-action="join-room"]')!
+    joinForm.querySelector<HTMLInputElement>('input[name="roomId"]')!.value = 'room-abc'
+    joinForm.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+
+    await vi.waitFor(() => {
+      expect(joinRoom).toHaveBeenCalledWith('room-abc')
+    })
+
+    const createForm = parent.querySelector<HTMLFormElement>('form[data-action="create-room"]')!
+    createForm.querySelector<HTMLInputElement>('input[name="roomName"]')!.value = 'Night shift'
+    createForm.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+
+    await vi.waitFor(() => {
+      expect(createRoom).toHaveBeenCalledWith({
+        name: 'Night shift',
+        maxPlayers: 2,
+        isPrivate: true
+      })
+    })
+    lobby.dispose()
   })
 })

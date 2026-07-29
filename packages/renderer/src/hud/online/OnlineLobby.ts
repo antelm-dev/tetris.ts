@@ -84,9 +84,16 @@ export class OnlineLobby {
 
   private readonly onClick = (e: MouseEvent): void => {
     const t = e.target
-    if (!(t instanceof HTMLElement)) return
-    const action = t.closest<HTMLElement>('[data-action]')?.dataset.action
-    if (!action) return
+    if (!(t instanceof Element)) return
+    // Submit controls must not hit runAction early — that re-renders and
+    // detaches the form before the submit handler can read FormData.
+    const control = t.closest('button, input')
+    if (control instanceof HTMLButtonElement && control.type === 'submit') return
+    if (control instanceof HTMLInputElement && control.type === 'submit') return
+
+    const actionEl = t.closest<HTMLElement>('[data-action]')
+    const action = actionEl?.dataset.action
+    if (!action || actionEl instanceof HTMLFormElement) return
     void this.runAction(action)
   }
 
@@ -209,13 +216,15 @@ export class OnlineLobby {
             <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
             <div class="online-lobby__actions">
               <button type="submit" ${this.busy ? 'disabled' : ''}>Sign in</button>
-              <button type="submit" form="online-register" ${this.busy ? 'disabled' : ''}>Register</button>
             </div>
           </form>
           <form id="online-register" class="online-lobby__form online-lobby__form--register" data-action="register">
             <label>Display name <input name="displayName" type="text" autocomplete="nickname" required maxlength="32" /></label>
             <label>Email <input name="email" type="email" autocomplete="username" required /></label>
             <label>Password <input name="password" type="password" autocomplete="new-password" required minlength="8" /></label>
+            <div class="online-lobby__actions">
+              <button type="submit" ${this.busy ? 'disabled' : ''}>Register</button>
+            </div>
           </form>
           <p class="online-lobby__status">${escapeHtml(v.statusText)}</p>
           <button type="button" class="online-lobby__link" data-action="exit">Back to menu</button>

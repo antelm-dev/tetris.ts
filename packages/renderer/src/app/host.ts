@@ -19,4 +19,9 @@ export interface HighScores {
 export interface Host {
   /** Wired to the window "close" IPC; without it the Quit row is hidden. */
   quit?: () => void
+  /**
+   * Base URL for the online API (`/api/auth`, `/game` namespace). Empty or
+   * undefined means same-origin (typical browser / Vite proxy setup).
+   */
+  apiOrigin?: string
 }

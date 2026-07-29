@@ -63,11 +63,15 @@ function connectGame(port: number, token: string): Promise<Socket> {
     reconnection: false
   })
   return new Promise((resolve, reject) => {
+    const onAuthError = (err: unknown) => reject(new Error(JSON.stringify(err)))
     socket.on('connect', () => {
       socket.emit(ClientEvent.Authenticate, { protocolVersion: PROTOCOL_VERSION, token })
     })
-    socket.on(ServerEvent.Connected, () => resolve(socket))
-    socket.on(ServerEvent.Error, (err) => reject(new Error(JSON.stringify(err))))
+    socket.on(ServerEvent.Connected, () => {
+      socket.off(ServerEvent.Error, onAuthError)
+      resolve(socket)
+    })
+    socket.on(ServerEvent.Error, onAuthError)
     socket.on('connect_error', reject)
   })
 }
@@ -187,9 +191,11 @@ describe('Realtime match (e2e)', () => {
       c.emit(ClientEvent.RoomCreate, { name: 'second', maxPlayers: 2 })
       const roomTwo = (await createdTwo).data.roomId
 
-      const joinedTwo = waitForEvent(a, ServerEvent.RoomJoined)
+      // One-room-per-socket: joining a second room while still in the first is rejected.
+      const joinError = waitForEvent<{ code: string }>(a, ServerEvent.Error)
       a.emit(ClientEvent.RoomJoin, { roomId: roomTwo })
-      await joinedTwo
+      const rejected = await joinError
+      expect(rejected.data.code).toBe('ALREADY_IN_ROOM')
 
       const ready = waitForRoomReady(a, roomOne)
       a.emit(ClientEvent.PlayerReady, { roomId: roomOne, ready: true })
@@ -200,14 +206,19 @@ describe('Realtime match (e2e)', () => {
       a.emit(ClientEvent.GameStart, { roomId: roomOne })
       await started
 
+      // Payload room must equal the socket current room — roomTwo must never ack.
       let acknowledged = false
       a.once(ServerEvent.ActionAcknowledged, () => {
         acknowledged = true
       })
-      a.emit(ClientEvent.PlayerAction, { roomId: roomOne, seq: 1, ts: Date.now(), action: 'left' })
+      a.emit(ClientEvent.PlayerAction, { roomId: roomTwo, seq: 1, ts: Date.now(), action: 'left' })
       await new Promise((resolve) => setTimeout(resolve, 100))
-
       expect(acknowledged).toBe(false)
+
+      // Control stays with the current room only.
+      const ack = waitForEvent(a, ServerEvent.ActionAcknowledged)
+      a.emit(ClientEvent.PlayerAction, { roomId: roomOne, seq: 1, ts: Date.now(), action: 'left' })
+      await ack
     } finally {
       a.close()
       b.close()

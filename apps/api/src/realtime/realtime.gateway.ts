@@ -31,7 +31,7 @@ import { RoomsService } from '../rooms/rooms.service'
 interface SocketState {
   userId?: string
   displayName?: string
-  /** Current Socket.IO / domain room, when joined. */
+  /** Current Socket.IO / domain room — at most one per socket. */
   roomId?: string
   /** Server-assigned outbound sequence for this connection. */
   outSeq: number
@@ -43,6 +43,10 @@ type TypedSocket = Socket & { data: SocketState }
  * Realtime gateway for gameplay under `/game`. Validates every inbound payload
  * against `@tetris/protocol`, wraps outbound messages in sequenced envelopes,
  * and delegates match authority to {@link GamesService}.
+ *
+ * Phase 1 enforces one current room per socket: create/join while already in a
+ * different room is rejected, and ready/start/leave/action require both
+ * membership and `socket.data.roomId` equality with the payload room.
  */
 @WebSocketGateway({
   namespace: process.env.WS_NAMESPACE ?? '/game',
@@ -113,6 +117,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user) return
     const payload = this.validate(socket, ClientEvent.RoomCreate, roomCreatePayloadSchema, body)
     if (!payload) return
+    if (!this.ensureNoOtherRoom(socket, ClientEvent.RoomCreate)) return
 
     const room = this.rooms.create({
       name: payload.name,
@@ -133,6 +138,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user) return
     const payload = this.validate(socket, ClientEvent.RoomJoin, roomJoinPayloadSchema, body)
     if (!payload) return
+    // Re-joining the socket's current room is allowed; a different room is not.
+    if (socket.data.roomId && socket.data.roomId !== payload.roomId) {
+      this.error(socket, ClientEvent.RoomJoin, 'ALREADY_IN_ROOM', 'Leave the current room before joining another')
+      return
+    }
 
     try {
       const room = this.rooms.join(payload.roomId, user.userId, user.displayName)
@@ -151,6 +161,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user) return
     const payload = this.validate(socket, ClientEvent.RoomLeave, roomLeavePayloadSchema, body)
     if (!payload) return
+    if (!this.requireCurrentMembership(socket, payload.roomId, user.userId, ClientEvent.RoomLeave)) return
     this.departRoom(socket, payload.roomId, user.userId)
   }
 
@@ -160,6 +171,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user) return
     const payload = this.validate(socket, ClientEvent.PlayerReady, playerReadyPayloadSchema, body)
     if (!payload) return
+    if (!this.requireCurrentMembership(socket, payload.roomId, user.userId, ClientEvent.PlayerReady)) return
 
     try {
       const room = this.rooms.setReady(payload.roomId, user.userId, payload.ready)
@@ -177,6 +189,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user) return
     const payload = this.validate(socket, ClientEvent.GameStart, gameStartPayloadSchema, body)
     if (!payload) return
+    if (!this.requireCurrentMembership(socket, payload.roomId, user.userId, ClientEvent.GameStart)) return
 
     try {
       const room = this.rooms.start(payload.roomId, user.userId)
@@ -203,10 +216,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user) return
     const payload = this.validate(socket, ClientEvent.PlayerAction, playerActionPayloadSchema, body)
     if (!payload) return
+    if (!this.requireCurrentMembership(socket, payload.roomId, user.userId, ClientEvent.PlayerAction, false)) return
 
     const room = this.rooms.get(payload.roomId)
     if (!room || room.status !== 'in-progress') return
-    if (!room.members.has(user.userId)) return
     if (!this.games.hasActiveMatch(payload.roomId)) return
 
     this.games.applyAction(payload.roomId, user.userId, payload.action, payload.seq)
@@ -214,16 +227,54 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   // --- Helpers ---------------------------------------------------------------
 
+  /**
+   * Leave a room the socket is authorized for. Callers must already have proven
+   * current-room membership (or be the disconnect path with matching state).
+   */
   private departRoom(socket: TypedSocket, roomId: string, userId: string): void {
+    const roomRecord = this.rooms.get(roomId)
+    if (!roomRecord?.members.has(userId)) return
+    if (socket.data.roomId !== roomId) return
+
     if (this.games.hasActiveMatch(roomId)) {
       this.games.endRoom(roomId)
       this.rooms.markFinished(roomId)
     }
     const room = this.rooms.leave(roomId, userId)
     void socket.leave(roomId)
-    if (socket.data.roomId === roomId) socket.data.roomId = undefined
+    socket.data.roomId = undefined
     this.send(socket, ServerEvent.RoomLeft, { roomId })
     if (room) this.broadcastRoomState(room.id)
+  }
+
+  /** Reject create when the socket already tracks a current room. */
+  private ensureNoOtherRoom(socket: TypedSocket, event: string): boolean {
+    if (!socket.data.roomId) return true
+    this.error(socket, event, 'ALREADY_IN_ROOM', 'Leave the current room before creating another')
+    return false
+  }
+
+  /**
+   * Require `socket.data.roomId === roomId` and domain membership. Without both,
+   * ready/start/leave/action must be no-ops (optionally emitting an error).
+   */
+  private requireCurrentMembership(
+    socket: TypedSocket,
+    roomId: string,
+    userId: string,
+    event: string,
+    emitError = true
+  ): boolean {
+    if (socket.data.roomId !== roomId) {
+      if (emitError) this.error(socket, event, 'WRONG_ROOM', 'Not the socket current room')
+      return false
+    }
+    const room = this.rooms.get(roomId)
+    if (!room?.members.has(userId)) {
+      if (emitError) this.error(socket, event, 'NOT_A_MEMBER', 'Not a member of this room')
+      return false
+    }
+    return true
   }
 
   private requireAuth(socket: TypedSocket): { userId: string; displayName: string } | null {
@@ -280,8 +331,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       } satisfies ServerEnvelope<T>)
       return
     }
-    for (const userId of room.members.keys()) {
-      this.sendToUser(userId, event, data)
+    for (const memberId of room.members.keys()) {
+      this.sendToUser(memberId, event, data)
     }
   }
 

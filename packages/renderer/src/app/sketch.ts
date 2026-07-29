@@ -401,10 +401,12 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
         match?.update(dt)
       }
 
-      if (inOnline && onlineClient) {
+      const onlineState = inOnline && onlineClient ? onlineClient.getState() : undefined
+
+      if (inOnline && onlineClient && onlineState) {
         onlineInput?.update(dt)
         const local = onlineClient.localGame
-        if (local && onlineClient.getState().lobby === 'in-match' && !onlineClient.getState().match?.gameOver) {
+        if (local && onlineState.lobby === 'in-match' && !onlineState.match?.gameOver) {
           onlineClient.advance(dt * 1000)
         }
         if (local && onlineMotion) onlineMotion.update(dt, local)
@@ -502,9 +504,9 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
       // menu over everything (it no-ops once its fade-out has finished).
       if (playing) ui.paint(p)
       if (inVersus && match) versusHud.paint(p, match)
-      if (inOnline && onlineClient) {
+      if (inOnline && onlineClient && onlineState) {
         onlineHud.paint(p, {
-          state: onlineClient.getState(),
+          state: onlineState,
           localGame: onlineClient.localGame,
           remote: onlineClient.remoteProjection
         })

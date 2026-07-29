@@ -1,13 +1,17 @@
-import { describe, it, expect } from 'vitest'
+/**
+ * @vitest-environment happy-dom
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Game, mulberry32 } from '@tetris/engine'
 import {
   buildOnlineLobbyView,
   nextOnlineSceneAction,
   type OnlineLobbyView
 } from '@tetris/renderer/hud/online/model'
-import type { OnlineClientState } from '@tetris/renderer/app/online'
+import { OnlineLobby } from '@tetris/renderer/hud/online/OnlineLobby'
+import type { OnlineClient, OnlineClientState } from '@tetris/renderer/app/online'
 import { pieceFromWire } from '@tetris/renderer/scene/remote'
-import { isOnlineMultiplayerUiEnabled } from '@tetris/renderer/app/onlineFlag'
+import { isOnlineMultiplayerUiEnabled, parseOnlineFlag } from '@tetris/renderer/app/onlineFlag'
 
 function emptyState(partial: Partial<OnlineClientState> = {}): OnlineClientState {
   return {
@@ -22,6 +26,18 @@ function emptyState(partial: Partial<OnlineClientState> = {}): OnlineClientState
     ...partial
   }
 }
+
+describe('parseOnlineFlag', () => {
+  it('is true only for the string 1', () => {
+    expect(parseOnlineFlag({ VITE_ONLINE_MULTIPLAYER_UI: '1' })).toBe(true)
+    expect(parseOnlineFlag({ VITE_ONLINE_MULTIPLAYER_UI: '0' })).toBe(false)
+    expect(parseOnlineFlag({ VITE_ONLINE_MULTIPLAYER_UI: 'true' })).toBe(false)
+    expect(parseOnlineFlag({ VITE_ONLINE_MULTIPLAYER_UI: '' })).toBe(false)
+    expect(parseOnlineFlag({})).toBe(false)
+    expect(parseOnlineFlag(undefined)).toBe(false)
+    expect(parseOnlineFlag(null)).toBe(false)
+  })
+})
 
 describe('online lobby view model', () => {
   it('keeps unauthenticated users on the auth panel', () => {
@@ -182,5 +198,59 @@ describe('online menu feature flag contract', () => {
     // Menu hides the Online row when `onOnlineVersus` is omitted — the sketch
     // only passes the handler when `VITE_ONLINE_MULTIPLAYER_UI === '1'`.
     expect(typeof isOnlineMultiplayerUiEnabled()).toBe('boolean')
+    expect(isOnlineMultiplayerUiEnabled()).toBe(parseOnlineFlag(import.meta.env))
+  })
+})
+
+describe('OnlineLobby overlay DOM', () => {
+  let parent: HTMLElement
+  let state: OnlineClientState
+  let listeners: Set<(s: OnlineClientState) => void>
+  let client: OnlineClient
+
+  beforeEach(() => {
+    parent = document.createElement('div')
+    document.body.appendChild(parent)
+    state = emptyState()
+    listeners = new Set()
+    client = {
+      getState: () => state,
+      get user() {
+        return state.user
+      },
+      subscribe: (listener: (s: OnlineClientState) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      }
+    } as unknown as OnlineClient
+  })
+
+  afterEach(() => {
+    parent.remove()
+    document.getElementById('online-lobby-styles')?.remove()
+  })
+
+  it('preserves typed credentials across client-driven re-renders and dispose removes root', () => {
+    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
+    lobby.show()
+
+    const email = parent.querySelector<HTMLInputElement>('form[data-action="login"] input[name="email"]')
+    expect(email).toBeTruthy()
+    email!.value = 'player@example.com'
+    email!.focus()
+
+    state = emptyState({
+      lastError: { code: 'AUTH_FAILED', message: 'Invalid credentials' }
+    })
+    for (const listener of listeners) listener(state)
+
+    const emailAfter = parent.querySelector<HTMLInputElement>('form[data-action="login"] input[name="email"]')
+    expect(emailAfter?.value).toBe('player@example.com')
+    expect(document.activeElement).toBe(emailAfter)
+
+    expect(parent.querySelector('.online-lobby')).toBeTruthy()
+    lobby.dispose()
+    expect(parent.querySelector('.online-lobby')).toBeNull()
+    expect(document.getElementById('online-lobby-styles')).toBeNull()
   })
 })

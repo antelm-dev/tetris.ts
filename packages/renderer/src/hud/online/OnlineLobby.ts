@@ -72,6 +72,8 @@ export class OnlineLobby {
     this.root.removeEventListener('click', this.onClick)
     this.root.removeEventListener('submit', this.onSubmit)
     this.root.remove()
+    this.styleEl?.remove()
+    this.styleEl = undefined
     this.open = false
   }
 
@@ -182,7 +184,12 @@ export class OnlineLobby {
       this.root.innerHTML = ''
       return
     }
-    if (this.open) this.root.hidden = false
+    // Skip DOM rebuilds while the overlay is closed — avoid wiping typed fields
+    // when client notifies fire in the background.
+    if (!this.open) return
+
+    this.root.hidden = false
+    const preserved = captureFieldState(this.root)
 
     const error = v.errorText
       ? `<p class="online-lobby__error" role="alert">${escapeHtml(v.errorText)}</p>`
@@ -213,6 +220,7 @@ export class OnlineLobby {
           <p class="online-lobby__status">${escapeHtml(v.statusText)}</p>
           <button type="button" class="online-lobby__link" data-action="exit">Back to menu</button>
         </div>`
+      restoreFieldState(this.root, preserved)
       return
     }
 
@@ -228,6 +236,7 @@ export class OnlineLobby {
             <button type="button" data-action="exit">Back to menu</button>
           </div>
         </div>`
+      restoreFieldState(this.root, preserved)
       return
     }
 
@@ -288,6 +297,7 @@ export class OnlineLobby {
         <p class="online-lobby__status">${escapeHtml(v.statusText)}</p>
         <button type="button" class="online-lobby__link" data-action="exit">Back to menu</button>
       </div>`
+    restoreFieldState(this.root, preserved)
   }
 
   private ensureStyles(): void {
@@ -305,6 +315,72 @@ function escapeHtml(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+interface FieldSnapshot {
+  values: Map<string, string>
+  focusKey: string | null
+  selectionStart: number | null
+  selectionEnd: number | null
+}
+
+function fieldKey(input: HTMLInputElement): string {
+  const form = input.closest('form')
+  const formAction = form?.dataset.action ?? form?.id ?? ''
+  return `${formAction}::${input.name}`
+}
+
+function captureFieldState(root: HTMLElement): FieldSnapshot {
+  const values = new Map<string, string>()
+  for (const input of root.querySelectorAll('input')) {
+    if (!(input instanceof HTMLInputElement) || !input.name) continue
+    values.set(fieldKey(input), input.value)
+  }
+
+  let focusKey: string | null = null
+  let selectionStart: number | null = null
+  let selectionEnd: number | null = null
+  const active = document.activeElement
+  if (active instanceof HTMLInputElement && root.contains(active) && active.name) {
+    focusKey = fieldKey(active)
+    selectionStart = active.selectionStart
+    selectionEnd = active.selectionEnd
+  } else if (active instanceof HTMLElement && root.contains(active)) {
+    const action = active.dataset.action
+    if (action) focusKey = `action::${action}`
+  }
+
+  return { values, focusKey, selectionStart, selectionEnd }
+}
+
+function restoreFieldState(root: HTMLElement, snapshot: FieldSnapshot): void {
+  for (const input of root.querySelectorAll('input')) {
+    if (!(input instanceof HTMLInputElement) || !input.name) continue
+    const key = fieldKey(input)
+    if (!snapshot.values.has(key)) continue
+    input.value = snapshot.values.get(key)!
+  }
+
+  if (!snapshot.focusKey) return
+  if (snapshot.focusKey.startsWith('action::')) {
+    const action = snapshot.focusKey.slice('action::'.length)
+    root.querySelector<HTMLElement>(`[data-action="${CSS.escape(action)}"]`)?.focus()
+    return
+  }
+
+  for (const input of root.querySelectorAll('input')) {
+    if (!(input instanceof HTMLInputElement) || !input.name) continue
+    if (fieldKey(input) !== snapshot.focusKey) continue
+    input.focus()
+    if (snapshot.selectionStart != null && snapshot.selectionEnd != null) {
+      try {
+        input.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd)
+      } catch {
+        // Some input types (e.g. email in older engines) reject selection ranges.
+      }
+    }
+    return
+  }
 }
 
 const ONLINE_LOBBY_CSS = `

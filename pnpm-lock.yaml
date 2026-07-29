@@ -104,7 +104,7 @@ importers:
         version: 1.5.9(@swc/core@1.15.46)(rollup@4.62.2)
       vitest:
         specifier: ^4.1.9
-        version: 4.1.10(@types/node@22.20.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0))
+        version: 4.1.10(@types/node@22.20.1)(happy-dom@20.11.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0))
 
   apps/asset-manager:
     dependencies:
@@ -126,7 +126,7 @@ importers:
         version: 7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)
       vitest:
         specifier: ^4.1.9
-        version: 4.1.10(@types/node@22.20.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0))
+        version: 4.1.10(@types/node@22.20.1)(happy-dom@20.11.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0))
 
   apps/tetris:
     dependencies:
@@ -181,10 +181,13 @@ importers:
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
       electron-ipc-module:
         specifier: github:antelm-dev/electron-ipc-module#main
-        version: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98(electron@40.10.6)
+        version: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61(electron@40.10.6)
       electron-run:
         specifier: github:antelm-dev/electron-run#master
-        version: rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669(electron@40.10.6)(rollup@4.62.2)
+        version: rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a(electron@40.10.6)(rollup@4.62.2)
+      happy-dom:
+        specifier: ^20.11.1
+        version: 20.11.1
       oxfmt:
         specifier: ^0.58.0
         version: 0.58.0
@@ -205,7 +208,7 @@ importers:
         version: 7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)
       vitest:
         specifier: ^4.1.9
-        version: 4.1.10(@types/node@22.20.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0))
+        version: 4.1.10(@types/node@22.20.1)(happy-dom@20.11.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0))
 
   packages/bot:
     dependencies:
@@ -1641,6 +1644,9 @@ packages:
   '@types/validator@13.15.10':
     resolution: {integrity: sha512-T8L6i7wCuyoK8A/ZeLYt1+q0ty3Zb9+qbSSvrIVitzT3YjZqkTZ40IbRsPanlB4h1QB3JVL1SYCdR6ngtFYcuA==}
 
+  '@types/whatwg-mimetype@3.0.2':
+    resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
+
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
@@ -2025,6 +2031,10 @@ packages:
   buffer-from@1.1.2:
     resolution: {integrity: sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==}
 
+  buffer-image-size@0.6.4:
+    resolution: {integrity: sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ==}
+    engines: {node: '>=4.0'}
+
   buffer@5.7.1:
     resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
 
@@ -2392,9 +2402,11 @@ packages:
     engines: {node: '>=14.0.0'}
     hasBin: true
 
-  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98:
-    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98}
+  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61:
+    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61}
     version: 0.1.0
+    engines: {node: 20 || >=22}
+    hasBin: true
     peerDependencies:
       electron: '>=12.0.0'
 
@@ -2440,6 +2452,10 @@ packages:
   enhanced-resolve@5.24.3:
     resolution: {integrity: sha512-PwKooW9JUzh5chmYfHM3IQl5OkK2u2Nm011MgeZrss3JmFraUx/fqrf78kk8GUMYoibx/14MdwTl/1WKkG7TpQ==}
     engines: {node: '>=10.13.0'}
+
+  entities@7.0.1:
+    resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
+    engines: {node: '>=0.12'}
 
   env-paths@2.2.1:
     resolution: {integrity: sha512-+h1lkLKhZMTYjog1VEpJNG7NZJWcuc2DDk/qsqSTRRCOXiLjeQ1d1/udrUGhqMxUgAlwKNZ0cf2uqan5GLuS2A==}
@@ -2796,6 +2812,10 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  happy-dom@20.11.1:
+    resolution: {integrity: sha512-XSt8tMzbW9ymE7687xztkO1ckR7qJNQ3LywY9vlYGhGi3zXrGBHuUo2Cl1ztZaICW+1eAGdkLbj6iwVqDT33kg==}
+    engines: {node: '>=20.0.0'}
 
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
@@ -3710,8 +3730,8 @@ packages:
     resolution: {integrity: sha512-CHhPh+UNHD2GTXNYhPWLnU8ONHdI+5DI+4EYIAOaiD63rHeYlZvyh8P+in5999TTSFgUYuKUAjzRI4mdh/p+2A==}
     engines: {node: '>=8.0'}
 
-  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669:
-    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669}
+  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a:
+    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a}
     version: 0.1.0
     peerDependencies:
       electron: '>=20.0.0'
@@ -4411,6 +4431,10 @@ packages:
     peerDependenciesMeta:
       webpack-cli:
         optional: true
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
@@ -5588,6 +5612,8 @@ snapshots:
 
   '@types/validator@13.15.10': {}
 
+  '@types/whatwg-mimetype@3.0.2': {}
+
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 22.20.1
@@ -6092,6 +6118,10 @@ snapshots:
 
   buffer-from@1.1.2: {}
 
+  buffer-image-size@0.6.4:
+    dependencies:
+      '@types/node': 22.20.1
+
   buffer@5.7.1:
     dependencies:
       base64-js: 1.5.1
@@ -6461,7 +6491,7 @@ snapshots:
       - electron-builder-squirrel-windows
       - supports-color
 
-  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98(electron@40.10.6):
+  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61(electron@40.10.6):
     dependencies:
       electron: 40.10.6
       glob: 11.1.0
@@ -6547,6 +6577,8 @@ snapshots:
     dependencies:
       graceful-fs: 4.2.11
       tapable: 2.3.3
+
+  entities@7.0.1: {}
 
   env-paths@2.2.1: {}
 
@@ -7062,6 +7094,19 @@ snapshots:
       responselike: 3.0.0
 
   graceful-fs@4.2.11: {}
+
+  happy-dom@20.11.1:
+    dependencies:
+      '@types/node': 22.20.1
+      '@types/whatwg-mimetype': 3.0.2
+      '@types/ws': 8.18.1
+      buffer-image-size: 0.6.4
+      entities: 7.0.1
+      whatwg-mimetype: 3.0.0
+      ws: 8.21.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   has-flag@4.0.0: {}
 
@@ -7925,7 +7970,7 @@ snapshots:
       sprintf-js: 1.1.3
     optional: true
 
-  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669(electron@40.10.6)(rollup@4.62.2):
+  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a(electron@40.10.6)(rollup@4.62.2):
     dependencies:
       electron: 40.10.6
     optionalDependencies:
@@ -8592,7 +8637,7 @@ snapshots:
       jiti: 2.7.0
       terser: 5.49.0
 
-  vitest@4.1.10(@types/node@22.20.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)):
+  vitest@4.1.10(@types/node@22.20.1)(happy-dom@20.11.1)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)):
     dependencies:
       '@vitest/expect': 4.1.10
       '@vitest/mocker': 4.1.10(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0))
@@ -8616,6 +8661,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.20.1
+      happy-dom: 20.11.1
     transitivePeerDependencies:
       - msw
 
@@ -8681,6 +8727,8 @@ snapshots:
       - lightningcss
       - postcss
       - uglify-js
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-url@5.0.0:
     dependencies:

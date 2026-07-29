@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config'
 
 // Standalone from vite.config.ts (which is renderer-only). Tests run in Node:
 // the game engine is pure, and the IPC modules use a shared `electron` mock.
+// Overlay DOM coverage uses happy-dom via a per-file `@vitest-environment` pragma.
 export default defineConfig({
   test: {
     environment: 'node',

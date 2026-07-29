@@ -9,4 +9,8 @@ const plugin = ipcBridge({
   tsconfig: './tsconfig.main.json'
 })
 
-plugin.buildStart()
+// Standalone invocation — provide the Rollup plugin-context methods `buildStart`
+// expects when running outside a bundler.
+plugin.buildStart.call({
+  addWatchFile() {}
+})

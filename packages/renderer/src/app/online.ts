@@ -13,6 +13,7 @@ import {
   ROWS,
   mulberry32,
   type Action,
+  type GameEvents,
   type GameProjection
 } from '@tetris/engine'
 import {
@@ -174,6 +175,7 @@ function normalizeOrigin(origin: string | undefined): string {
 function defaultSocketFactory(url: string): OnlineSocket {
   const socket: Socket = io(url, {
     autoConnect: true,
+    reconnection: false,
     transports: ['websocket', 'polling']
   })
   return {
@@ -295,6 +297,9 @@ export class OnlineClient {
       return Promise.resolve()
     }
 
+    // Drop any prior socket before opening a new one (no auto-reconnect).
+    this.detachSocket()
+
     this.patch({ connection: 'connecting', lastError: null })
     const url = `${this.apiOrigin}/game`
     const socket = this.createSocket(url)
@@ -371,8 +376,8 @@ export class OnlineClient {
 
   /**
    * Apply a local input immediately and emit `client:player:action`. Never
-   * sends boards, scores, attacks, or results. `pause` is applied locally only
-   * (server rejects it) and is not emitted.
+   * sends boards, scores, attacks, or results. `pause` is a no-op online
+   * (server rejects it; local prediction must not pause either).
    */
   public sendAction(action: GameAction): void {
     const match = this.state.match
@@ -380,8 +385,6 @@ export class OnlineClient {
     if (match.gameOver || match.localGame.gameOver) return
 
     if (action === 'pause') {
-      match.localGame.action('pause')
-      this.notify()
       return
     }
 
@@ -415,6 +418,27 @@ export class OnlineClient {
       lobby: this.state.room ? 'in-room' : 'none',
       match: null
     })
+  }
+
+  /**
+   * Compose additional local `Game` listeners without dropping the client's
+   * lock / garbage handlers. Presentation (task 02) should use this instead of
+   * assigning `game.events` wholesale.
+   */
+  public wireLocalEvents(partial: GameEvents): void {
+    const game = this.state.match?.localGame
+    if (!game) return
+    const previous = game.events
+    const next: GameEvents = { ...previous, ...partial }
+    if (partial.onLock) {
+      const prior = previous.onLock
+      const added = partial.onLock
+      next.onLock = (hard) => {
+        prior?.(hard)
+        added(hard)
+      }
+    }
+    game.events = next
   }
 
   // --- Internals -------------------------------------------------------------
@@ -564,8 +588,12 @@ export class OnlineClient {
       height: ROWS,
       random: mulberry32(payload.seed)
     })
+    const previousEvents = game.events
+    const previousOnLock = previousEvents.onLock
     game.events = {
-      onLock: () => {
+      ...previousEvents,
+      onLock: (hard) => {
+        previousOnLock?.(hard)
         const match = this.state.match
         if (!match) return
         match.lockCount += 1
@@ -622,13 +650,16 @@ export class OnlineClient {
     if (!match || !me) return
     if (payload.roomId !== match.roomId) return
     if (payload.toUserId !== me) return
+    // Enqueue only — drain exclusively from the local onLock path so rows
+    // never insert while a piece is active (AC-03), even when appliedAtLock
+    // is already in the past (apply at the *next* lock).
     this.pendingGarbage.push(payload)
-    this.flushGarbage()
   }
 
   /**
    * Apply queued deliveries whose `appliedAtLock` has been reached. Uses the
-   * wire hole list — never regenerates holes from local RNG.
+   * wire hole list — never regenerates holes from local RNG. Called only from
+   * the composed local `onLock` handler.
    */
   private flushGarbage(): void {
     const match = this.state.match
@@ -653,16 +684,20 @@ export class OnlineClient {
     }
   }
 
-  private teardownSocket(connection: OnlineConnectionPhase): void {
+  /** Unregister handlers and disconnect the current socket instance, if any. */
+  private detachSocket(): void {
     const socket = this.socket
-    if (socket) {
-      for (const [event, handler] of this.boundHandlers) {
-        socket.off(event, handler)
-      }
-      this.boundHandlers.clear()
-      socket.disconnect()
-      this.socket = null
+    if (!socket) return
+    for (const [event, handler] of this.boundHandlers) {
+      socket.off(event, handler)
     }
+    this.boundHandlers.clear()
+    socket.disconnect()
+    this.socket = null
+  }
+
+  private teardownSocket(connection: OnlineConnectionPhase): void {
+    this.detachSocket()
     this.clearMatchInternal()
     this.rejectConnectWaiters(new Error('Socket closed'))
     this.patch({
@@ -693,10 +728,6 @@ export class OnlineClient {
     if (!raw || typeof raw !== 'object') return null
     const env = raw as ServerEnvelope<T>
     if (typeof env.seq !== 'number' || typeof env.ts !== 'number' || !('data' in env)) return null
-    if (env.seq >= 0 && env.seq <= this.state.lastEnvelopeSeq) {
-      // Out-of-order / duplicate connection envelope — still accept game data
-      // carefully, but track the high-water mark when seq advances.
-    }
     if (env.seq > this.state.lastEnvelopeSeq) {
       this.state.lastEnvelopeSeq = env.seq
     }

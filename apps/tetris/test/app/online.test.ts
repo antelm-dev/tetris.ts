@@ -13,6 +13,8 @@ import {
 /** In-memory socket that records emits and lets tests push server envelopes. */
 class FakeSocket implements OnlineSocket {
   connected = true
+  /** When false, Authenticate does not auto-reply with Connected. */
+  autoAuth = true
   readonly emitted: Array<{ event: string; args: unknown[] }> = []
   private readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>()
 
@@ -31,10 +33,7 @@ class FakeSocket implements OnlineSocket {
 
   emit(event: string, ...args: unknown[]): void {
     this.emitted.push({ event, args })
-    if (event === ClientEvent.Authenticate) {
-      const payload = args[0] as { protocolVersion: number; token: string }
-      expect(payload.protocolVersion).toBe(PROTOCOL_VERSION)
-      expect(payload.token).toBeTruthy()
+    if (event === ClientEvent.Authenticate && this.autoAuth) {
       queueMicrotask(() => {
         this.push(ServerEvent.Connected, envelope(0, { userId: 'user-1', sessionId: 'sess-1' }))
       })
@@ -93,6 +92,10 @@ function roomState(partial: Record<string, unknown> = {}) {
   }
 }
 
+function boardOccupiedCount(game: Game): number {
+  return game.project().board.reduce((sum, row) => sum + row.filter((c) => c !== 0).length, 0)
+}
+
 describe('OnlineClient', () => {
   let socket: FakeSocket
   let createSocket: OnlineSocketFactory
@@ -137,6 +140,46 @@ describe('OnlineClient', () => {
     expect(client.getState().connection).toBe('ready')
     expect(client.getState().sessionId).toBe('sess-1')
     expect(socket.emitted[0]?.event).toBe(ClientEvent.Authenticate)
+    const authPayload = socket.emitted[0]?.args[0] as { protocolVersion: number; token: string }
+    expect(authPayload.protocolVersion).toBe(PROTOCOL_VERSION)
+    expect(authPayload.token).toBeTruthy()
+  })
+
+  it('tears down the previous socket on a second connect()', async () => {
+    const sockets: FakeSocket[] = []
+    const factory = vi.fn(() => {
+      const s = new FakeSocket()
+      s.autoAuth = false
+      sockets.push(s)
+      return s
+    })
+    const c = new OnlineClient({
+      apiOrigin: 'http://api.test',
+      fetch: mockFetchOk(),
+      createSocket: factory,
+      now: () => now
+    })
+    await c.login({ email: 'a@b.co', password: 'secret' })
+
+    const firstConnect = c.connect()
+    expect(sockets).toHaveLength(1)
+    const first = sockets[0]!
+    const disconnectSpy = vi.spyOn(first, 'disconnect')
+    const offSpy = vi.spyOn(first, 'off')
+
+    const secondConnect = c.connect()
+    expect(disconnectSpy).toHaveBeenCalled()
+    expect(offSpy.mock.calls.length).toBeGreaterThan(0)
+    expect(first.connected).toBe(false)
+    expect(sockets).toHaveLength(2)
+
+    const second = sockets[1]!
+    second.push(ServerEvent.Connected, envelope(0, { userId: 'user-1', sessionId: 'sess-2' }))
+    await secondConnect
+    expect(c.getState().connection).toBe('ready')
+    expect(c.getState().sessionId).toBe('sess-2')
+    // First connect promise should also settle once the replacement is ready.
+    await firstConnect
   })
 
   it('tracks lobby create/join/ready/start without leaking the socket', async () => {
@@ -199,10 +242,12 @@ describe('OnlineClient', () => {
     )
     expect(client.match?.lastAckedSeq).toBe(0)
 
-    // pause stays local — server rejects it
+    // pause is a full no-op online — neither emit nor local pause
     const before = socket.emitted.length
+    expect(client.localGame!.paused).toBe(false)
     client.sendAction('pause')
     expect(socket.emitted.length).toBe(before)
+    expect(client.localGame!.paused).toBe(false)
   })
 
   it('drops stale opponent snapshot sequences and keeps display-only remote state', async () => {
@@ -270,6 +315,86 @@ describe('OnlineClient', () => {
     game.events.onLock?.(false)
     expect(client.match?.lockCount).toBe(1)
     expect(received).toEqual([[{ hole: 3 }, { hole: 4 }]])
+  })
+
+  it('does not insert garbage while a piece is active even if appliedAtLock is already past', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope({ roomId: 'room-1', seed: 11, startedAt: 1 }))
+
+    const game = client.localGame!
+    expect(game.activePiece).toBeTruthy()
+
+    // Advance past the documented lock so lockCount >= appliedAtLock while a piece is still active.
+    game.events.onLock?.(false)
+    expect(client.match?.lockCount).toBe(1)
+    expect(game.activePiece).toBeTruthy()
+
+    const occupiedBefore = boardOccupiedCount(game)
+    const received: unknown[] = []
+    const original = game.receiveGarbage.bind(game)
+    game.receiveGarbage = (rows) => {
+      received.push(rows)
+      original(rows)
+    }
+
+    socket.push(
+      ServerEvent.GarbageDelivered,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        deliverySeq: 2,
+        fromUserId: 'user-2',
+        toUserId: 'user-1',
+        rows: [{ hole: 2 }, { hole: 5 }],
+        appliedAtLock: 1
+      })
+    )
+
+    expect(received).toEqual([])
+    expect(boardOccupiedCount(game)).toBe(occupiedBefore)
+
+    game.events.onLock?.(false)
+    expect(client.match?.lockCount).toBe(2)
+    expect(received).toEqual([[{ hole: 2 }, { hole: 5 }]])
+    expect(boardOccupiedCount(game)).toBeGreaterThan(occupiedBefore)
+  })
+
+  it('keeps lockCount / garbage flush when wireLocalEvents adds another onLock', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope({ roomId: 'room-1', seed: 9, startedAt: 1 }))
+
+    const game = client.localGame!
+    const extraLocks: boolean[] = []
+    client.wireLocalEvents({
+      onLock: (hard) => {
+        extraLocks.push(hard)
+      }
+    })
+
+    const received: unknown[] = []
+    const original = game.receiveGarbage.bind(game)
+    game.receiveGarbage = (rows) => {
+      received.push(rows)
+      original(rows)
+    }
+
+    socket.push(
+      ServerEvent.GarbageDelivered,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        deliverySeq: 1,
+        fromUserId: 'user-2',
+        toUserId: 'user-1',
+        rows: [{ hole: 1 }],
+        appliedAtLock: 1
+      })
+    )
+
+    game.events.onLock?.(true)
+    expect(extraLocks).toEqual([true])
+    expect(client.match?.lockCount).toBe(1)
+    expect(received).toEqual([[{ hole: 1 }]])
   })
 
   it('clears match state on game-over and dispose tears down the socket', async () => {

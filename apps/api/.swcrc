@@ -15,11 +15,6 @@
       "legacyDecorator": true,
       "decoratorMetadata": true
     },
-    "keepClassNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@tetris/engine": ["../../packages/engine/src/index.ts"],
-      "@tetris/engine/*": ["../../packages/engine/src/*"]
-    }
+    "keepClassNames": true
   }
 }

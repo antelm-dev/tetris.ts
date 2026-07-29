@@ -190,10 +190,10 @@ importers:
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
       electron-ipc-module:
         specifier: github:antelm-dev/electron-ipc-module#main
-        version: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98(electron@40.10.6)
+        version: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61(electron@40.10.6)
       electron-run:
         specifier: github:antelm-dev/electron-run#master
-        version: rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669(electron@40.10.6)(rollup@4.62.2)
+        version: rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a(electron@40.10.6)(rollup@4.62.2)
       happy-dom:
         specifier: ^20.11.1
         version: 20.11.1
@@ -231,6 +231,9 @@ importers:
 
   packages/engine:
     devDependencies:
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(@swc/core@1.15.46)(jiti@2.7.0)(postcss@8.5.16)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -2542,9 +2545,11 @@ packages:
     engines: {node: '>=14.0.0'}
     hasBin: true
 
-  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98:
-    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98}
+  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61:
+    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61}
     version: 0.1.0
+    engines: {node: 20 || >=22}
+    hasBin: true
     peerDependencies:
       electron: '>=12.0.0'
 
@@ -3899,8 +3904,8 @@ packages:
     resolution: {integrity: sha512-CHhPh+UNHD2GTXNYhPWLnU8ONHdI+5DI+4EYIAOaiD63rHeYlZvyh8P+in5999TTSFgUYuKUAjzRI4mdh/p+2A==}
     engines: {node: '>=8.0'}
 
-  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669:
-    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669}
+  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a:
+    resolution: {tarball: https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a}
     version: 0.1.0
     peerDependencies:
       electron: '>=20.0.0'
@@ -6469,9 +6474,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  bundle-require@5.1.0(esbuild@0.27.0):
+  bundle-require@5.1.0(esbuild@0.27.7):
     dependencies:
-      esbuild: 0.27.0
+      esbuild: 0.27.7
       load-tsconfig: 0.2.5
 
   bytes@3.1.2: {}
@@ -6842,7 +6847,7 @@ snapshots:
       - electron-builder-squirrel-windows
       - supports-color
 
-  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/7c2bc6ad101ade5b97951238cce147ede9c50b98(electron@40.10.6):
+  electron-ipc-module@https://codeload.github.com/antelm-dev/electron-ipc-module/tar.gz/d9539352d3872c9d1924fbb370edcd2072225b61(electron@40.10.6):
     dependencies:
       electron: 40.10.6
       glob: 11.1.0
@@ -8339,7 +8344,7 @@ snapshots:
       sprintf-js: 1.1.3
     optional: true
 
-  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/6dcb979dd9279ceda7b6e297d7b71cb2c7d6b669(electron@40.10.6)(rollup@4.62.2):
+  rollup-plugin-electron-run@https://codeload.github.com/antelm-dev/electron-run/tar.gz/33e745d504f6decb7a28e37963b9d981626ad21a(electron@40.10.6)(rollup@4.62.2):
     dependencies:
       electron: 40.10.6
     optionalDependencies:
@@ -8877,12 +8882,12 @@ snapshots:
 
   tsup@8.5.1(@swc/core@1.15.46)(jiti@2.7.0)(postcss@8.5.16)(typescript@5.9.3):
     dependencies:
-      bundle-require: 5.1.0(esbuild@0.27.0)
+      bundle-require: 5.1.0(esbuild@0.27.7)
       cac: 6.7.14
       chokidar: 4.0.3
       consola: 3.4.2
       debug: 4.4.3
-      esbuild: 0.27.0
+      esbuild: 0.27.7
       fix-dts-default-cjs-exports: 1.0.1
       joycon: 3.1.1
       picocolors: 1.1.1

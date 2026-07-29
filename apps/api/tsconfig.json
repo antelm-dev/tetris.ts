@@ -10,12 +10,7 @@
     "emitDecoratorMetadata": true,
     "declaration": false,
     "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@tetris/engine": ["../../packages/engine/src/index.ts"],
-      "@tetris/engine/*": ["../../packages/engine/src/*"],
-      "@tetris/protocol": ["../../packages/protocol/src/index.ts"]
-    }
+    "baseUrl": "."
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

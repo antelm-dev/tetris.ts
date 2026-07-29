@@ -5,9 +5,9 @@
   "description": "NestJS + Fastify API for Tetris — REST, WebSocket gateway and the future authoritative game server",
   "license": "MIT",
   "scripts": {
-    "prebuild": "pnpm -C ../../packages/protocol build",
+    "prebuild": "pnpm -C ../../packages/engine build && pnpm -C ../../packages/protocol build",
     "build": "nest build",
-    "predev": "pnpm -C ../../packages/protocol build",
+    "predev": "pnpm -C ../../packages/engine build && pnpm -C ../../packages/protocol build",
     "dev": "nest start --watch --builder swc",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",

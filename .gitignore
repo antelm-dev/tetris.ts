@@ -7,6 +7,7 @@ dist-web
 release
 apps/api/dist
 packages/protocol/dist
+packages/engine/dist
 *.tsbuildinfo
 
 # Local environment (never commit real secrets)

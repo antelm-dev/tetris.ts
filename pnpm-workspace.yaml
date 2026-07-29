@@ -1,12 +1,16 @@
 packages:
-  - 'packages/*'
-  - 'apps/*'
+  - packages/*
+  - apps/*
 
 onlyBuiltDependencies:
+  - '@nestjs/core'
   - '@swc/core'
   - argon2
   - electron
   - electron-ipc-module
   - electron-winstaller
   - esbuild
+  - oxfmt
+  - oxlint
   - rollup-plugin-electron-run
+  - typescript

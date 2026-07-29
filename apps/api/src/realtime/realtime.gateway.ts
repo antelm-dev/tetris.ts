@@ -24,12 +24,15 @@ import type { ServerEnvelope } from '@tetris/protocol'
 import type { Server, Socket } from 'socket.io'
 import type { ZodSchema } from 'zod'
 import { TokenService } from '../auth/token.service'
+import { GamesService } from '../games/games.service'
 import { RoomsService } from '../rooms/rooms.service'
 
 /** Per-socket state we attach to `socket.data`. */
 interface SocketState {
   userId?: string
   displayName?: string
+  /** Current Socket.IO / domain room, when joined. */
+  roomId?: string
   /** Server-assigned outbound sequence for this connection. */
   outSeq: number
 }
@@ -37,22 +40,9 @@ interface SocketState {
 type TypedSocket = Socket & { data: SocketState }
 
 /**
- * Realtime gateway for gameplay, under the `/game` namespace (configurable via
- * `WS_NAMESPACE`). It serves both the web and Electron clients over the same
- * process as the REST API — one deployment, no separate realtime service.
- *
- * Design commitments encoded here:
- *  - every inbound payload is validated with the shared `@tetris/protocol` zod
- *    schemas before it touches domain code;
- *  - every outbound message is wrapped in a versioned {@link ServerEnvelope}
- *    with a per-connection sequence number;
- *  - actions carry client sequence numbers (`seq`) so the authoritative engine
- *    can order/deduplicate them.
- *
- * Not yet built (intentionally — this is the foundation): the fixed-timestep
- * simulation loop and snapshot broadcasting. When added, opponent snapshots
- * MUST be down-sampled to ~5–10 Hz — never the full 60 Hz board — and routed
- * through the {@link PubSub} bus so they survive a multi-instance deployment.
+ * Realtime gateway for gameplay under `/game`. Validates every inbound payload
+ * against `@tetris/protocol`, wraps outbound messages in sequenced envelopes,
+ * and delegates match authority to {@link GamesService}.
  */
 @WebSocketGateway({
   namespace: process.env.WS_NAMESPACE ?? '/game',
@@ -60,13 +50,16 @@ type TypedSocket = Socket & { data: SocketState }
 })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RealtimeGateway.name)
+  /** userId -> live authenticated socket (Phase 1: one connection per user). */
+  private readonly socketsByUser = new Map<string, TypedSocket>()
 
   @WebSocketServer()
   private server!: Server
 
   constructor(
     private readonly tokens: TokenService,
-    private readonly rooms: RoomsService
+    private readonly rooms: RoomsService,
+    private readonly games: GamesService
   ) {}
 
   handleConnection(socket: TypedSocket): void {
@@ -75,6 +68,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   handleDisconnect(socket: TypedSocket): void {
+    const userId = socket.data.userId
+    if (userId && this.socketsByUser.get(userId) === socket) {
+      this.socketsByUser.delete(userId)
+    }
+    const roomId = socket.data.roomId
+    if (userId && roomId) {
+      this.departRoom(socket, roomId, userId)
+    }
     this.logger.debug(`Socket disconnected: ${socket.id}`)
   }
 
@@ -100,6 +101,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     socket.data.userId = claims.sub
     socket.data.displayName = claims.email
+    this.socketsByUser.set(claims.sub, socket)
     this.send(socket, ServerEvent.Connected, { userId: claims.sub, sessionId: socket.id })
   }
 
@@ -120,6 +122,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       isPrivate: payload.isPrivate
     })
     void socket.join(room.id)
+    socket.data.roomId = room.id
     this.send(socket, ServerEvent.RoomCreated, this.rooms.toState(room))
     this.broadcastRoomState(room.id)
   }
@@ -131,10 +134,15 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const payload = this.validate(socket, ClientEvent.RoomJoin, roomJoinPayloadSchema, body)
     if (!payload) return
 
-    const room = this.rooms.join(payload.roomId, user.userId, user.displayName)
-    void socket.join(room.id)
-    this.send(socket, ServerEvent.RoomJoined, this.rooms.toState(room))
-    this.broadcastRoomState(room.id)
+    try {
+      const room = this.rooms.join(payload.roomId, user.userId, user.displayName)
+      void socket.join(room.id)
+      socket.data.roomId = room.id
+      this.send(socket, ServerEvent.RoomJoined, this.rooms.toState(room))
+      this.broadcastRoomState(room.id)
+    } catch (err) {
+      this.domainError(socket, ClientEvent.RoomJoin, err)
+    }
   }
 
   @SubscribeMessage(ClientEvent.RoomLeave)
@@ -143,11 +151,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user) return
     const payload = this.validate(socket, ClientEvent.RoomLeave, roomLeavePayloadSchema, body)
     if (!payload) return
-
-    const room = this.rooms.leave(payload.roomId, user.userId)
-    void socket.leave(payload.roomId)
-    this.send(socket, ServerEvent.RoomLeft, { roomId: payload.roomId })
-    if (room) this.broadcastRoomState(room.id)
+    this.departRoom(socket, payload.roomId, user.userId)
   }
 
   @SubscribeMessage(ClientEvent.PlayerReady)
@@ -157,8 +161,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const payload = this.validate(socket, ClientEvent.PlayerReady, playerReadyPayloadSchema, body)
     if (!payload) return
 
-    const room = this.rooms.setReady(payload.roomId, user.userId, payload.ready)
-    this.broadcastRoomState(room.id)
+    try {
+      const room = this.rooms.setReady(payload.roomId, user.userId, payload.ready)
+      this.broadcastRoomState(room.id)
+    } catch (err) {
+      this.domainError(socket, ClientEvent.PlayerReady, err)
+    }
   }
 
   // --- Game ------------------------------------------------------------------
@@ -170,13 +178,23 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const payload = this.validate(socket, ClientEvent.GameStart, gameStartPayloadSchema, body)
     if (!payload) return
 
-    const room = this.rooms.start(payload.roomId, user.userId)
-    // A shared seed makes every authoritative session reproduce the same bag.
-    const seed = Math.floor(Math.random() * 0xff_ff_ff_ff)
-    this.emitToRoom(room.id, ServerEvent.GameStarted, { roomId: room.id, seed, startedAt: Date.now() })
-    this.broadcastRoomState(room.id)
-    // NEXT STEP: spin up one authoritative GamesService session per member with
-    // this seed and start the fixed-timestep loop + ~5–10 Hz snapshot fan-out.
+    try {
+      const room = this.rooms.start(payload.roomId, user.userId)
+      const seed = Math.floor(Math.random() * 0xff_ff_ff_ff)
+      const userIds = [...room.members.keys()]
+      const { startedAt } = this.games.startMatch(room.id, userIds, seed, {
+        toUser: (userId, event, data) => this.sendToUser(userId, event, data),
+        toRoom: (roomId, event, data) => this.emitToRoomMembers(roomId, event, data),
+        onEnded: (roomId) => {
+          this.rooms.markFinished(roomId)
+          this.broadcastRoomState(roomId)
+        }
+      })
+      this.emitToRoomMembers(room.id, ServerEvent.GameStarted, { roomId: room.id, seed, startedAt })
+      this.broadcastRoomState(room.id)
+    } catch (err) {
+      this.domainError(socket, ClientEvent.GameStart, err)
+    }
   }
 
   @SubscribeMessage(ClientEvent.PlayerAction)
@@ -186,13 +204,27 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const payload = this.validate(socket, ClientEvent.PlayerAction, playerActionPayloadSchema, body)
     if (!payload) return
 
-    // NEXT STEP: forward (payload.action, payload.seq) into this player's
-    // authoritative session so the server validates/simulates the input. The
-    // sequence number lets the session reject stale/duplicate actions.
-    this.logger.verbose(`action ${payload.action} seq=${payload.seq} user=${user.userId} room=${payload.roomId}`)
+    const room = this.rooms.get(payload.roomId)
+    if (!room || room.status !== 'in-progress') return
+    if (!room.members.has(user.userId)) return
+    if (!this.games.hasActiveMatch(payload.roomId)) return
+
+    this.games.applyAction(payload.roomId, user.userId, payload.action, payload.seq)
   }
 
   // --- Helpers ---------------------------------------------------------------
+
+  private departRoom(socket: TypedSocket, roomId: string, userId: string): void {
+    if (this.games.hasActiveMatch(roomId)) {
+      this.games.endRoom(roomId)
+      this.rooms.markFinished(roomId)
+    }
+    const room = this.rooms.leave(roomId, userId)
+    void socket.leave(roomId)
+    if (socket.data.roomId === roomId) socket.data.roomId = undefined
+    this.send(socket, ServerEvent.RoomLeft, { roomId })
+    if (room) this.broadcastRoomState(room.id)
+  }
 
   private requireAuth(socket: TypedSocket): { userId: string; displayName: string } | null {
     if (!socket.data.userId) {
@@ -204,7 +236,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /** Validate an inbound payload; on failure emit a scoped error and return null. */
   private validate<T>(socket: TypedSocket, event: string, schema: ZodSchema<T>, body: unknown): T | null {
-    const result = schema.safeParse(body)
+    // Nest/Socket.IO may forward the payload as a single-element array.
+    const raw = Array.isArray(body) ? body[0] : body
+    const result = schema.safeParse(raw)
     if (!result.success) {
       this.error(socket, event, 'INVALID_PAYLOAD', result.error.issues.map((i) => i.message).join('; '))
       return null
@@ -212,25 +246,43 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     return result.data
   }
 
-  private broadcastRoomState(roomId: string): void {
-    const room = this.rooms.get(roomId)
-    if (room) this.emitToRoom(roomId, ServerEvent.RoomState, this.rooms.toState(room))
+  private domainError(socket: TypedSocket, event: string, err: unknown): void {
+    const message = err instanceof Error ? err.message : 'Request failed'
+    this.error(socket, event, 'DOMAIN_ERROR', message)
   }
 
-  /** Emit a versioned, sequenced envelope to one socket. */
+  private broadcastRoomState(roomId: string): void {
+    const room = this.rooms.get(roomId)
+    if (room) this.emitToRoomMembers(roomId, ServerEvent.RoomState, this.rooms.toState(room))
+  }
+
+  private sendToUser<T>(userId: string, event: string, data: T): void {
+    const socket = this.socketsByUser.get(userId)
+    if (socket) this.send(socket, event, data)
+  }
+
   private send<T>(socket: TypedSocket, event: string, data: T): void {
     socket.emit(event, this.envelope(socket, data))
   }
 
-  /** Emit to every socket in a room. Sequence here is per-room-broadcast, not per-socket. */
-  private emitToRoom<T>(roomId: string, event: string, data: T): void {
-    const envelope: ServerEnvelope<T> = {
-      protocolVersion: PROTOCOL_VERSION,
-      seq: -1,
-      ts: Date.now(),
-      data
+  /**
+   * Emit to each room member with a valid per-connection sequence. Avoids the
+   * room-wide `seq: -1` placeholder for gameplay streams.
+   */
+  private emitToRoomMembers<T>(roomId: string, event: string, data: T): void {
+    const room = this.rooms.get(roomId)
+    if (!room) {
+      this.server.to(roomId).emit(event, {
+        protocolVersion: PROTOCOL_VERSION,
+        seq: -1,
+        ts: Date.now(),
+        data
+      } satisfies ServerEnvelope<T>)
+      return
     }
-    this.server.to(roomId).emit(event, envelope)
+    for (const userId of room.members.keys()) {
+      this.sendToUser(userId, event, data)
+    }
   }
 
   private error(socket: TypedSocket, event: string | undefined, code: string, message: string): void {

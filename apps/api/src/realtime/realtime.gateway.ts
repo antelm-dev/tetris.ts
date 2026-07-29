@@ -103,6 +103,16 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return
     }
 
+    // Phase 1 deliberately has no reconnect/resume flow. Do not replace a
+    // live socket here: the original socket owns the room membership, and
+    // replacing it would let its later disconnect end an active match.
+    const existing = this.socketsByUser.get(claims.sub)
+    if (existing && existing !== socket && existing.connected) {
+      this.error(socket, ClientEvent.Authenticate, 'ALREADY_CONNECTED', 'This user already has an active connection')
+      socket.disconnect(true)
+      return
+    }
+
     socket.data.userId = claims.sub
     socket.data.displayName = claims.email
     this.socketsByUser.set(claims.sub, socket)

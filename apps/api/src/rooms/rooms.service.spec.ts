@@ -51,4 +51,11 @@ describe('RoomsService', () => {
     rooms.setReady(room.id, 'u2', true)
     expect(rooms.start(room.id, 'u1').status).toBe('in-progress')
   })
+
+  it('rejects starting without exactly two players', () => {
+    const rooms = makeService()
+    const room = rooms.create({ name: 'L', hostUserId: 'u1', hostDisplayName: 'A' })
+    rooms.setReady(room.id, 'u1', true)
+    expect(() => rooms.start(room.id, 'u1')).toThrow(/two players/i)
+  })
 })

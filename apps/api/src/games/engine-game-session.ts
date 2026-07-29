@@ -1,25 +1,30 @@
-import type { Game } from '@tetris/engine'
 import type { GameAction } from '@tetris/protocol'
+import type { Action as EngineAction, GameProjection, GarbageRow } from '@tetris/engine'
 import type { AuthoritativeGameSession, GameSnapshot } from './interfaces/authoritative-session.interface'
 
 /**
- * The exact slice of the engine's `Game` this session drives. Typed as a
- * `Pick` of the real class so it stays in lock-step with the engine without
- * importing it at runtime — the concrete `Game` instance is injected in
- * (constructed with a seeded RNG for determinism). Tests wire the real engine.
+ * Slice of `@tetris/engine` `Game` the session drives. Prefer {@link advance}
+ * (milliseconds, gravity + lock) over the legacy seconds-based `tick`.
  */
-export type EngineGame = Pick<Game, 'action' | 'tick' | 'score' | 'lines' | 'level' | 'gameOver'>
+export type EngineGame = Pick<
+  {
+    action(name: EngineAction): void
+    advance(dtMs: number): void
+    project(): GameProjection
+    receiveGarbage(countOrRows: number | readonly GarbageRow[]): void
+    score: number
+    lines: number
+    level: number
+    gameOver: boolean
+  },
+  'action' | 'advance' | 'project' | 'receiveGarbage' | 'score' | 'lines' | 'level' | 'gameOver'
+>
 
 /**
- * Reference implementation of {@link AuthoritativeGameSession} over the shared
- * engine. It adds only the server's concerns — input sequencing and a compact
- * snapshot — and delegates all game rules to the engine, so the rules are never
- * duplicated. The engine instance is passed in rather than constructed here so
- * this class carries no runtime dependency on `@tetris/engine` (which ships as
- * source): the production wiring that builds/loads the engine is the next step.
+ * Authoritative session over the shared engine: input sequencing plus compact
+ * projections. Engine construction stays with the match owner.
  */
 export class EngineGameSession implements AuthoritativeGameSession {
-  /** Highest client sequence applied so far; guards against stale/duplicate inputs. */
   private lastSeq = -1
 
   constructor(
@@ -31,26 +36,51 @@ export class EngineGameSession implements AuthoritativeGameSession {
     return this.game.gameOver
   }
 
-  applyAction(action: GameAction, seq: number): void {
-    if (seq <= this.lastSeq) return
+  get score(): number {
+    return this.game.score
+  }
+
+  get lines(): number {
+    return this.game.lines
+  }
+
+  /**
+   * Apply a sequenced input. Returns `true` only when the action mutated (or
+   * was accepted as a live input). Stale/duplicate/post-over/`pause` inputs
+   * return `false` and leave the simulation unchanged.
+   */
+  applyAction(action: GameAction, seq: number): boolean {
+    if (seq <= this.lastSeq) return false
     this.lastSeq = seq
-    if (this.game.gameOver) return
-    // `GameAction` is provably a subset of the engine's `Action` union
-    // (see assertActionsAligned), so this needs no cast.
+    if (this.game.gameOver) return false
+    // Versus matches are continuous — a client pause must not freeze authority.
+    if (action === 'pause') return false
     this.game.action(action)
+    return true
   }
 
   advance(dtMs: number): void {
-    this.game.tick(dtMs)
+    this.game.advance(dtMs)
+  }
+
+  project(): GameProjection {
+    return this.game.project()
+  }
+
+  receiveGarbage(rows: readonly GarbageRow[]): void {
+    this.game.receiveGarbage(rows)
   }
 
   snapshot(): GameSnapshot {
+    const projection = this.game.project()
     return {
       userId: this.userId,
-      score: this.game.score,
-      lines: this.game.lines,
-      level: this.game.level,
-      over: this.game.gameOver
+      score: projection.score,
+      lines: projection.lines,
+      level: projection.level,
+      over: projection.gameOver,
+      board: projection.board,
+      activePiece: projection.activePiece
     }
   }
 }

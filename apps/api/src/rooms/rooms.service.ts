@@ -82,14 +82,28 @@ export class RoomsService {
     return room
   }
 
-  /** Transition a room to in-progress. Only the host may start, and only from the lobby with everyone ready. */
+  /**
+   * Transition a room to in-progress. Only the host may start, and only from
+   * the lobby with everyone ready. Phase 1 requires exactly two active players.
+   */
   start(roomId: string, requesterId: string): Room {
     const room = this.require(roomId)
     if (room.hostUserId !== requesterId) throw new ForbiddenException('Only the host can start the game')
     if (room.status !== 'lobby') throw new BadRequestException('Game already started')
+    if (room.members.size !== 2) {
+      throw new BadRequestException('Phase 1 requires exactly two players')
+    }
     const allReady = [...room.members.values()].every((m) => m.ready)
     if (!allReady) throw new BadRequestException('All players must be ready')
     room.status = 'in-progress'
+    return room
+  }
+
+  /** Mark a finished match so the lobby projection stays truthful after game-over. */
+  markFinished(roomId: string): Room | null {
+    const room = this.rooms.get(roomId)
+    if (!room) return null
+    room.status = 'finished'
     return room
   }
 

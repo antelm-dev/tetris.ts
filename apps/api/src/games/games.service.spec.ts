@@ -170,4 +170,17 @@ describe('GamesService match loop', () => {
     expect(games.hasActiveMatch('room-e')).toBe(false)
     vi.useRealTimers()
   })
+
+  it('seeds both players from the published shared seed', () => {
+    games = new GamesService()
+    games.startMatch('room-seed', ['u1', 'u2'], 12345, {
+      toUser: () => undefined,
+      toRoom: () => undefined
+    })
+    const a = games.gameFor('room-seed', 'u1')!
+    const b = games.gameFor('room-seed', 'u2')!
+    expect(a.activePiece?.name).toBe(b.activePiece?.name)
+    expect(a.nextPieces.map((p) => p.name)).toEqual(b.nextPieces.map((p) => p.name))
+    games.endRoom('room-seed')
+  })
 })

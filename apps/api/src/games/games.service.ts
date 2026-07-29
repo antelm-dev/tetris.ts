@@ -15,6 +15,15 @@ import { EngineGameSession } from './engine-game-session'
 import type { AuthoritativeGameSession } from './interfaces/authoritative-session.interface'
 import { mulberry32 } from './mulberry32'
 
+/**
+ * Deterministic garbage-hole stream derived from the published match seed.
+ * Piece bags use `mulberry32(seed)` directly; garbage uses this sibling stream
+ * so hole placement never desynchronizes bag draws.
+ */
+export function matchGarbageSeed(seed: number): number {
+  return (seed >>> 0) ^ 0x9e37_79b9
+}
+
 /** Fixed simulation step — ~60 Hz authority, snapshots are emitted far less often. */
 export const MATCH_STEP_MS = 16
 /** Cap catch-up steps per wall-clock tick so a stall cannot runaway-simulate. */
@@ -122,7 +131,7 @@ export class GamesService implements OnModuleDestroy {
       startedAt,
       players,
       playerOrder: [...userIds],
-      garbageRng: mulberry32(seed ^ 0x9e37_79b9),
+      garbageRng: mulberry32(matchGarbageSeed(seed)),
       deliverySeq: 0,
       timer: null,
       lastWallMs: Date.now(),
@@ -132,11 +141,13 @@ export class GamesService implements OnModuleDestroy {
       emit
     }
 
-    userIds.forEach((userId, index) => {
+    userIds.forEach((userId) => {
+      // Both players share the declared match seed so clients can reproduce
+      // each authoritative bag from {@link GameStartedPayload.seed} alone.
       const game = new Game({
         width: COLS,
         height: ROWS,
-        random: mulberry32(seed ^ (index + 1) * 0x85eb_ca6b)
+        random: mulberry32(seed)
       })
       const session = new EngineGameSession(userId, game)
       const player: PlayerRuntime = {

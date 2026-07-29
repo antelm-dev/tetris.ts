@@ -65,7 +65,11 @@ export interface RoomStatePayload {
 
 export interface GameStartedPayload {
   roomId: string
-  /** Shared seed so every authoritative session and spectator can reproduce the same bag. */
+  /**
+   * Shared match seed. Each player's piece bag is `mulberry32(seed)`; garbage
+   * hole placement uses `mulberry32(seed ^ 0x9e3779b9)` so clients can reproduce
+   * both streams from this value alone.
+   */
   seed: number
   startedAt: number
 }

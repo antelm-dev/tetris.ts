@@ -15,7 +15,9 @@
   "dependencies": {
     "@tetris/bot": "workspace:*",
     "@tetris/engine": "workspace:*",
-    "p5": "^1.11.3"
+    "@tetris/protocol": "workspace:*",
+    "p5": "^1.11.3",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@types/p5": "^1.7.6",

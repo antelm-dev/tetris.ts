@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#080b14" />
+    <meta name="description" content="A local workspace for previewing and replacing tetris.ts game assets." />
+    <title>Asset Manager · tetris.ts</title>
+    <script type="module" crossorigin src="/assets/index-Bhvidx-0.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DWsrqyu6.css">
+  </head>
+
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Asset Manager home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span>tetris.ts <em>/</em> assets</span>
+        </a>
+        <span class="local-badge"><i></i> Local workspace</span>
+      </header>
+
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow"><span></span> Game asset toolkit</p>
+          <h1 id="page-title">Asset Manager</h1>
+          <p class="hero-copy">
+            One place to inspect and update the files that shape the game. Sounds are connected first; new asset types
+            plug into the same catalogue.
+          </p>
+        </div>
+        <div class="asset-total" aria-live="polite">
+          <strong id="asset-total">—</strong>
+          <span>managed assets</span>
+        </div>
+      </section>
+
+      <section class="workspace" aria-label="Game assets">
+        <aside class="asset-sidebar">
+          <p class="sidebar-label">Asset types</p>
+          <nav id="type-list" aria-label="Asset types">
+            <div class="type-loading">Loading catalogue…</div>
+          </nav>
+          <div class="extension-note">
+            <span aria-hidden="true">＋</span>
+            <div>
+              <strong>Built to extend</strong>
+              <p>Register another source and its mirrors to add a new asset type.</p>
+            </div>
+          </div>
+        </aside>
+
+        <div class="asset-content">
+          <div class="content-heading">
+            <div>
+              <p id="active-kicker">Asset collection</p>
+              <h2 id="active-title">Loading…</h2>
+              <span id="active-description"></span>
+            </div>
+            <span id="active-count" class="active-count">—</span>
+          </div>
+
+          <div class="toolbar">
+            <label class="search">
+              <span aria-hidden="true">⌕</span>
+              <span class="sr-only">Search assets</span>
+              <input id="search" type="search" placeholder="Search assets…" autocomplete="off" />
+              <kbd>/</kbd>
+            </label>
+            <div id="filters" class="filters" role="group" aria-label="Filter assets"></div>
+          </div>
+
+          <div class="table-heading" aria-hidden="true"><span>Asset</span><span>Size</span><span>Actions</span></div>
+          <div id="asset-list" class="asset-list" aria-live="polite">
+            <div class="loading-state"><span></span> Loading asset catalogue…</div>
+          </div>
+          <p id="empty-state" class="empty-state" hidden>No assets match that search.</p>
+        </div>
+      </section>
+
+      <footer>
+        <span>Replacements update every configured copy together.</span>
+        <span id="format-note">Local developer tool</span>
+      </footer>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <input id="file-picker" type="file" hidden />
+  </body>
+</html>

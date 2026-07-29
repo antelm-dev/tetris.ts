@@ -1,18 +1,21 @@
 import P5 from 'p5'
 import { getWindowSize } from '../core/dom'
-import { CELL, COLS, ROWS, sidePanelTop, sidePanelX } from '../core/geometry'
-import { Game } from '@tetris/engine'
+import { CELL, COLS, ROWS, sidePanelTop, sidePanelX, cellToWorld } from '../core/geometry'
+import { Game, type Action } from '@tetris/engine'
 import { MODES } from '@tetris/engine/modes'
 import type { ModeId } from '@tetris/engine/modes'
+import type { GameAction } from '@tetris/protocol'
 import { Input } from '../input/Input'
 import { Menu } from '../hud/menu'
 import { Ui } from '../hud/ui'
 import { VersusHud } from '../hud/versus'
+import { OnlineHud, OnlineLobby, nextOnlineSceneAction } from '../hud/online'
 import { Background } from '../scene/background'
 import { Effects } from '../scene/effects'
 import { Flashes } from '../scene/flashes'
 import { applyLights, applyProjection, fitScale, inWorld, sway, versusOffsets, withBoard } from '../scene/camera'
 import { drawActive, drawGhost, drawLockedField, drawPanel, drawWell } from '../scene/blocks'
+import { drawRemoteProjection } from '../scene/remote'
 import { wireEvents } from './events'
 import { Gravity, PieceMotion } from './loop'
 import type { HighScores, Host } from './host'
@@ -23,6 +26,11 @@ import { browserStatistics } from './statistics'
 import { settings } from '../config/settings'
 import { TouchControls } from '../input/TouchControls'
 import { AudioManager } from '../audio/AudioManager'
+import { createOnlineClient, type OnlineClient } from './online'
+import { isOnlineMultiplayerUiEnabled } from './onlineFlag'
+import { centroid, pieceCells } from '../scene/cells'
+import { PALETTE } from '../config/themes'
+import type { RGB } from '../core/color'
 
 /**
  * The composition root: owns the engine and every presentation object, wires
@@ -36,8 +44,9 @@ import { AudioManager } from '../audio/AudioManager'
  * animating — it just doesn't tick — so the menu sits over a living scene and
  * a theme change previews itself on the well behind the card. `versus` swaps
  * the single Solo `Game` for a whole `VersusMatch` (two independent games).
+ * `online` is a networked two-board layout driven by {@link OnlineClient}.
  */
-type Scene = 'menu' | 'play' | 'versus'
+type Scene = 'menu' | 'play' | 'versus' | 'online'
 
 /** Draw one Versus board's well/field/piece/panels — the same board-drawing functions Solo uses. */
 function drawVersusBoard(p: P5, side: VersusSide): void {
@@ -70,6 +79,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
   const motion = new PieceMotion()
   const input = new Input(game)
   const versusHud = new VersusHud()
+  const onlineHud = new OnlineHud()
   const statistics = browserStatistics()
   const touch = web ? new TouchControls(el) : undefined
 
@@ -102,6 +112,15 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
   let match: VersusMatch | undefined
   let versusInput: Input | undefined
 
+  // Online Versus: client + lobby overlay + local presentation only.
+  let onlineClient: OnlineClient | undefined
+  let onlineLobby: OnlineLobby | undefined
+  let onlineInput: Input | undefined
+  let onlineMotion: PieceMotion | undefined
+  let onlineFx: Effects | undefined
+  let onlineFlashes: Flashes | undefined
+  let onlineUnsub: (() => void) | undefined
+
   const startSolo = (modeId: ModeId): void => {
     scene = 'play'
     currentModeId = modeId
@@ -120,6 +139,20 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
     match = undefined
   }
 
+  const teardownOnline = (): void => {
+    onlineUnsub?.()
+    onlineUnsub = undefined
+    onlineInput?.dispose()
+    onlineInput = undefined
+    onlineMotion = undefined
+    onlineFx = undefined
+    onlineFlashes = undefined
+    onlineLobby?.dispose()
+    onlineLobby = undefined
+    onlineClient?.dispose()
+    onlineClient = undefined
+  }
+
   const startVersus = (difficulty: BotDifficulty): void => {
     teardownVersus()
     scene = 'versus'
@@ -129,18 +162,105 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
     touch?.show(versusInput)
   }
 
+  const wireOnlinePresentation = (local: Game): void => {
+    onlineMotion = new PieceMotion()
+    onlineFx = new Effects()
+    onlineFlashes = new Flashes()
+    const motionRef = onlineMotion
+    const fxRef = onlineFx
+    const flashesRef = onlineFlashes
+    const shake = (amount: number): void => fxRef.shake(amount * settings.shakeMultiplier)
+    const burst = (x: number, y: number, count: number, color: RGB, spread?: number): void =>
+      fxRef.burst(x, y, Math.round(count * settings.effectsIntensity), color, spread)
+
+    onlineClient?.wireLocalEvents({
+      onSpawn: () => motionRef.onSpawn(),
+      onMove: () => audio.move('player'),
+      onRotate: (kicked) => {
+        motionRef.onRotate()
+        audio.rotate(kicked, 'player')
+      },
+      onHold: () => audio.hold('player'),
+      onLock: (hard) => {
+        const ap = local.activePiece
+        if (ap) {
+          const cells = pieceCells(ap)
+          flashesRef.lock(cells)
+          const bottom = cells.reduce((m, c) => Math.max(m, c.row), 0)
+          const { x, y } = cellToWorld(centroid(cells).col, bottom)
+          burst(x, y, hard ? 22 : 10, PALETTE[ap.name].glow, hard ? 260 : 150)
+        }
+        shake(hard ? 0.5 : 0.22)
+        audio.lock(hard, 'player')
+      },
+      onClear: (rows, count, level) => {
+        for (const r of rows) {
+          flashesRef.clear(r)
+        }
+        shake(count * 0.22)
+        audio.clear(rows, count, level, 'player')
+      },
+      onGarbageReceived: (count) => {
+        shake(0.3 + count * 0.05)
+        audio.garbageReceived(count, 'player')
+      },
+      onGameOver: () => audio.gameOver('player')
+    })
+  }
+
+  const enterOnlineMatch = (): void => {
+    const local = onlineClient?.localGame
+    if (!local || !onlineClient) return
+    scene = 'online'
+    onlineLobby?.setMatchSceneActive(true)
+    onlineLobby?.hide()
+    wireOnlinePresentation(local)
+    onlineInput?.dispose()
+    onlineInput = new Input({
+      action: (a: Action) => onlineClient!.sendAction(a as GameAction)
+    })
+    onlineInput.attach()
+    // Online deliberately skips web touch controls (Phase 2 non-goal).
+    touch?.hide()
+  }
+
+  const openOnline = (): void => {
+    teardownVersus()
+    teardownOnline()
+    scene = 'menu'
+    menu.hide()
+    onlineClient = createOnlineClient(host?.apiOrigin)
+    onlineLobby = new OnlineLobby(onlineClient, el, {
+      onExit: () => openMenu()
+    })
+    onlineLobby.show()
+    onlineUnsub = onlineClient.subscribe((state) => {
+      const action = nextOnlineSceneAction(
+        { sceneIsOnline: scene === 'online', lobby: state.lobby },
+        state
+      )
+      if (action === 'enter-match') enterOnlineMatch()
+      else if (action === 'leave-to-menu' && scene === 'online') openMenu()
+    })
+  }
+
   const openMenu = (): void => {
     scene = 'menu'
     input.detach()
     touch?.hide()
     teardownVersus()
+    teardownOnline()
     ui.hideOverlay()
     menu.show()
   }
 
-  const menu = new Menu({
+  // Declared after the open* helpers so their closures capture this binding; assigned
+  // immediately below before any user interaction can invoke those helpers.
+  let menu: Menu
+  menu = new Menu({
     onSelectMode: startSolo,
     onVersus: startVersus,
+    onOnlineVersus: isOnlineMultiplayerUiEnabled() ? openOnline : undefined,
     getStatistics: () => statistics.snapshot(),
     onQuit: host?.quit
   })
@@ -185,6 +305,8 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
      * p5 to preventDefault — Tab would otherwise walk the browser's focus ring.
      */
     p.keyPressed = (): boolean | void => {
+      if (onlineLobby?.isOpen) return
+
       if (scene === 'play') {
         // Tab reveals the controls legend under the well, and hides it again;
         // it also dismisses the one-shot start-of-run hint early.
@@ -213,28 +335,40 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
         // handler intercepts directly.
         if ((p.key === 'm' || p.key === 'M') && (match.isOver || match.isPaused)) openMenu()
       }
+
+      if (scene === 'online' && onlineClient) {
+        const state = onlineClient.getState()
+        const terminal =
+          !!state.match?.gameOver ||
+          state.connection === 'disconnected' ||
+          state.connection === 'error' ||
+          (!!state.match?.elimination && state.match.elimination.userId === state.user?.id)
+        if ((p.key === 'm' || p.key === 'M') && terminal) openMenu()
+      }
     }
 
     // Only ever reaches the menu — gameplay has no mouse input, so there's
     // nothing for these to leak into while `scene !== 'menu'`.
     let lastCursor: 'pointer' | 'default' = 'default'
     const syncCursor = (): void => {
-      const next = scene === 'menu' ? menu.cursorStyle(p.mouseX, p.mouseY) : 'default'
+      const next = scene === 'menu' && !onlineLobby?.isOpen ? menu.cursorStyle(p.mouseX, p.mouseY) : 'default'
       if (next === lastCursor) return
       lastCursor = next
       p.cursor(next === 'pointer' ? p.HAND : p.ARROW)
     }
 
     p.mouseMoved = (): void => {
+      if (onlineLobby?.isOpen) return
       menu.pointer(p.mouseX, p.mouseY)
       syncCursor()
     }
     p.mousePressed = (): void => {
+      if (onlineLobby?.isOpen) return
       menu.click(p.mouseX, p.mouseY)
       syncCursor()
     }
     p.mouseWheel = (event?: object): boolean | void => {
-      if (!menu.isOpen) return
+      if (onlineLobby?.isOpen || !menu.isOpen) return
       const delta = (event as { delta?: number } | undefined)?.delta ?? 0
       menu.wheel(delta)
       return false
@@ -245,6 +379,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
 
       const playing = scene === 'play'
       const inVersus = scene === 'versus' && !!match
+      const inOnline = scene === 'online' && !!onlineClient
 
       // 1. Input auto-repeat + gravity, both on real-time clocks. Both are
       //    frozen while the menu is up, so the board is a live still life.
@@ -266,13 +401,26 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
         match?.update(dt)
       }
 
+      const onlineState = inOnline && onlineClient ? onlineClient.getState() : undefined
+
+      if (inOnline && onlineClient && onlineState) {
+        onlineInput?.update(dt)
+        const local = onlineClient.localGame
+        if (local && onlineState.lobby === 'in-match' && !onlineState.match?.gameOver) {
+          onlineClient.advance(dt * 1000)
+        }
+        if (local && onlineMotion) onlineMotion.update(dt, local)
+        onlineFlashes?.update(dt)
+        onlineFx?.update(dt)
+      }
+
       // 2. Advance every animation clock.
       motion.update(dt, game)
       flashes.update(dt)
       fx.update(dt)
       ui.update(dt)
       menu.update(dt)
-      bg.setLevel(game.level)
+      bg.setLevel(inOnline ? (onlineClient?.localGame?.level ?? game.level) : game.level)
       bg.update(dt)
 
       // 3. Render.
@@ -288,7 +436,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
       // Evolving backdrop — drawn first, while no lights are active, so its
       // unlit fills render at their literal colours. Shares the camera so it
       // sways with the board, for a touch of parallax.
-      inWorld(p, fx, angle, scale, () => bg.draw(p))
+      inWorld(p, inOnline && onlineFx ? onlineFx : fx, angle, scale, () => bg.draw(p))
 
       applyLights(p)
 
@@ -302,6 +450,34 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
         inWorld(p, activeMatch.player.fx, angle, 1, () => {
           withBoard(p, offsets.player.x, offsets.player.scale, () => drawVersusBoard(p, activeMatch.player))
           withBoard(p, offsets.bot.x, offsets.bot.scale, () => drawVersusBoard(p, activeMatch.bot))
+        })
+      } else if (inOnline && onlineClient) {
+        const local = onlineClient.localGame
+        const remote = onlineClient.remoteProjection
+        const offsets = versusOffsets(p)
+        const shakeFx = onlineFx ?? fx
+        inWorld(p, shakeFx, angle, 1, () => {
+          withBoard(p, offsets.player.x, offsets.player.scale, () => {
+            drawWell(p)
+            if (local) {
+              drawLockedField(p, local.field)
+              if (settings.ghost && onlineMotion) drawGhost(p, local, onlineMotion.x)
+              if (onlineMotion) drawActive(p, local, onlineMotion.x, onlineMotion.y, onlineMotion.pop)
+              onlineFlashes?.draw(p)
+              const px = sidePanelX()
+              const top = sidePanelTop()
+              drawPanel(p, local.holdPiece, -px, top)
+              local.nextPieces
+                .slice(-3)
+                .reverse()
+                .forEach((piece, i) => drawPanel(p, piece, px, top + i * CELL * 3.4))
+              onlineFx?.draw(p)
+            }
+          })
+          withBoard(p, offsets.bot.x, offsets.bot.scale, () => {
+            drawWell(p)
+            if (remote) drawRemoteProjection(p, remote.board, remote.activePiece)
+          })
         })
       } else {
         inWorld(p, fx, angle, scale, () => {
@@ -328,7 +504,14 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
       // menu over everything (it no-ops once its fade-out has finished).
       if (playing) ui.paint(p)
       if (inVersus && match) versusHud.paint(p, match)
-      menu.paint(p)
+      if (inOnline && onlineClient && onlineState) {
+        onlineHud.paint(p, {
+          state: onlineState,
+          localGame: onlineClient.localGame,
+          remote: onlineClient.remoteProjection
+        })
+      }
+      if (!onlineLobby?.isOpen) menu.paint(p)
     }
   }, el)
 }

@@ -3,6 +3,8 @@ packages:
   - 'apps/*'
 
 onlyBuiltDependencies:
+  - '@swc/core'
+  - argon2
   - electron
   - electron-ipc-module
   - electron-winstaller

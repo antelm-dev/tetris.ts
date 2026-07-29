@@ -1,5 +1,8 @@
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
+
+const packageRoot = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * Renderer-only Vite config, shared by both build targets. The Electron
@@ -12,15 +15,19 @@ import { defineConfig, loadEnv } from 'vite'
  * else (the default mode) builds the plain-browser shell against
  * `dist-web`. Each target loads its own `.env.<mode>` file automatically.
  * Production source maps are opt-in via TETRIS_SOURCEMAP=1.
+ *
+ * `root` is the HTML entry folder (`renderer/`), but `envDir` must stay at the
+ * package root so `.env.web` / `.env.electron` (and `*.local` overrides) load.
  */
 export default defineConfig(({ mode }) => {
   const isElectron = mode === 'electron'
-  const env = loadEnv(mode, process.cwd(), '')
+  const env = loadEnv(mode, packageRoot, '')
   const sourcemap = env.TETRIS_SOURCEMAP === '1' || env.TETRIS_SOURCEMAP === 'true'
   const apiPort = Number(process.env.PORT ?? 4000)
 
   return {
     root: 'renderer',
+    envDir: packageRoot,
     base: env.VITE_BASE || '/',
     // Static assets (sounds) live with the shared game UI in @tetris/renderer,
     // not in this app shell, so both the desktop and (future) web app serve the

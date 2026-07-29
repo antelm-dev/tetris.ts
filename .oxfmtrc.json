@@ -10,6 +10,8 @@
     "dist-main",
     "dist-renderer",
     "release",
+    "apps/api/dist",
+    "packages/protocol/dist",
     "**/*.md",
     "**/*.yml",
     "**/*.yaml"

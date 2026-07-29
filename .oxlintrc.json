@@ -24,7 +24,9 @@
     "dist-renderer",
     "dist-web",
     "release",
-    "apps/tetris/server/data"
+    "apps/tetris/server/data",
+    "apps/api/dist",
+    "packages/protocol/dist"
   ],
   "overrides": [
     {
@@ -38,6 +40,25 @@
       "env": { "node": true }
     },
     { "files": ["apps/tetris/renderer/**/*.ts"], "env": { "browser": true } },
+    { "files": ["apps/api/**/*.ts", "packages/protocol/**/*.ts"], "env": { "node": true } },
+    {
+      "files": ["apps/api/**/*.ts"],
+      "rules": {
+        "typescript/no-extraneous-class": ["error", { "allowWithDecorator": true }],
+        "import/no-unassigned-import": ["error", { "allow": ["reflect-metadata"] }],
+        "typescript/consistent-type-imports": "off"
+      }
+    },
+    {
+      "files": ["apps/api/**/*.spec.ts", "apps/api/test/**/*.ts"],
+      "plugins": ["vitest"],
+      "env": { "vitest": true },
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "vitest/valid-expect": "off"
+      }
+    },
     {
       "files": ["apps/tetris/server/**/*.mjs"],
       "rules": {

@@ -68,6 +68,7 @@ import {
   WHEEL_STEP
 } from './model'
 import type { Entry, MenuHandlers, Rect, Row, RowId, Screen } from './types'
+import { isOnlineMultiplayerUiEnabled } from '../../app/onlineFlag'
 
 /**
  * The front-end menu, drawn with p5 into the same kind of off-screen 2D buffer
@@ -183,12 +184,26 @@ export class Menu {
     if (this.screen === 'main') {
       const rows: Row[] = [
         { id: 'solo', label: 'Solo', kind: 'action', emphasis: 'primary' },
-        { id: 'versus', label: 'Versus', kind: 'action' },
+        { id: 'versus', label: 'Versus', kind: 'action' }
+      ]
+      if (this.handlers.onOnlineVersus && isOnlineMultiplayerUiEnabled()) {
+        rows.push({ id: 'online', label: 'Online Versus', kind: 'action' })
+      }
+      rows.push(
         { id: 'statistics', label: 'Statistics', kind: 'action' },
         { id: 'settings', label: 'Settings', kind: 'action' }
-      ]
+      )
       if (this.handlers.onQuit) rows.push({ id: 'quit', label: 'Quit', kind: 'action' })
       return rows.map((row) => ({ kind: 'row', row }))
+    }
+
+    if (this.screen === 'online') {
+      return [
+        { kind: 'heading', label: 'Private match' },
+        { kind: 'gap', h: 8 },
+        { kind: 'row', row: { id: 'online:start', label: 'Continue', kind: 'action', emphasis: 'primary' } },
+        { kind: 'row', row: { id: 'online:back', label: 'Back', kind: 'action' } }
+      ]
     }
 
     if (this.screen === 'versus') {
@@ -481,6 +496,12 @@ export class Menu {
         this.scroll.offset = 0
         this.scroll.target = 0
         break
+      case 'online':
+        this.screen = 'online'
+        this.index = 0
+        this.scroll.offset = 0
+        this.scroll.target = 0
+        break
       case 'settings':
         this.screen = 'settings'
         this.index = 0
@@ -503,8 +524,13 @@ export class Menu {
         this.hide()
         this.handlers.onVersus(this.versusDifficulty)
         break
+      case 'online:start':
+        this.hide()
+        this.handlers.onOnlineVersus?.()
+        break
       case 'back':
       case 'versus:back':
+      case 'online:back':
         this.back()
         break
     }
@@ -723,6 +749,7 @@ export class Menu {
       main: 'TETRIS.TS',
       solo: 'SOLO',
       versus: 'VERSUS',
+      online: 'ONLINE',
       statistics: 'STATISTICS',
       settings: 'SETTINGS'
     }
@@ -756,6 +783,15 @@ export class Menu {
       g.textSize(11)
       setTracking(g, 1.4)
       g.text('Local match against a bot — no network required', CARD_W / 2 - 0.7, 74)
+      g.pop()
+    } else if (this.screen === 'online') {
+      g.push()
+      g.noStroke()
+      g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
+      g.textAlign(g.CENTER, g.CENTER)
+      g.textSize(11)
+      setTracking(g, 1.4)
+      g.text('Private room · sign in, ready, and play online', CARD_W / 2 - 0.7, 74)
       g.pop()
     } else if (this.screen === 'solo') {
       g.push()
@@ -1023,6 +1059,7 @@ export class Menu {
       main: '↑↓ Navigate   ·   Enter Select',
       solo: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
       versus: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back',
+      online: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
       statistics: 'Mouse wheel Scroll   ·   Esc Back',
       settings: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back'
     }

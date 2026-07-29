@@ -1,5 +1,5 @@
 import '@tetris/renderer/styles.css'
-import { EMPTY_RECORDS, render, type HighScores } from '@tetris/renderer'
+import { EMPTY_RECORDS, render, type HighScores, type Host } from '@tetris/renderer'
 
 /**
  * Solo records persisted through the small Express API (see `server/`)
@@ -34,8 +34,13 @@ const scores: HighScores = {
   onBeaten: () => {}
 }
 
+/** Same-origin by default (Vite `/api` proxy for records). Override for Nest online API. */
+const host: Host = {
+  apiOrigin: import.meta.env.VITE_API_ORIGIN || undefined
+}
+
 window.addEventListener('DOMContentLoaded', () => {
-  // No `Host`: there's no window to quit in a browser tab, so `Menu` hides
-  // the Quit row automatically (see `hud/menu/Menu.ts`).
-  render(document.getElementById('root')!, scores, undefined, true)
+  // No `quit` on Host: there's no window to close in a browser tab, so `Menu`
+  // hides the Quit row automatically (see `hud/menu/Menu.ts`).
+  render(document.getElementById('root')!, scores, host, true)
 })

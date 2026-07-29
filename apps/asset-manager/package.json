@@ -1,0 +1,24 @@
+{
+  "name": "@tetris/asset-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local workspace tool for previewing and replacing tetris.ts game assets",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n ui,assets -c blue,green \"vite\" \"node server/index.mjs\"",
+    "build": "pnpm typecheck && vite build",
+    "serve": "node server/index.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.6",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^4.1.9"
+  }
+}

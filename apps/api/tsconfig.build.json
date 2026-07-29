@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist",
+    // The Nest SWC builder feeds these `paths` into the emit. At runtime the
+    // workspace packages must resolve through node_modules (their `exports`),
+    // NOT be rewritten to relative source paths — so clear the mappings here.
+    // `@tetris/engine` is imported type-only and erased; `@tetris/protocol`
+    // resolves to its built dual ESM/CJS bundle.
+    "paths": {}
+  },
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts", "vitest.config.ts"]
+}

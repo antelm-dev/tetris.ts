@@ -1,7 +1,14 @@
 import { BINDS, normalizeKey, type Bind } from '../config/keymap'
 import { settings } from '../config/settings'
-import type { Game, Action } from '@tetris/engine'
+import type { Action } from '@tetris/engine'
 import { SOFT_DROP, resolveHorizontal, tickRepeat } from './timing'
+
+/**
+ * Anything that can receive a bind-mapped action. A local `Game` works as-is;
+ * Online Versus passes an adapter that calls `OnlineClient.sendAction` so
+ * inputs are both predicted locally and emitted on the wire.
+ */
+export type ActionSink = { action: (action: Action) => void }
 
 /** Game action each binding dispatches. */
 const ACTIONS: Record<Bind, Action> = {
@@ -37,7 +44,7 @@ export class Input {
   private vTimer = 0
   private readonly unsubscribe: () => void
 
-  constructor(private readonly game: Game) {
+  constructor(private readonly game: ActionSink) {
     this.rebuild()
     this.unsubscribe = settings.subscribe(() => this.rebuild())
   }

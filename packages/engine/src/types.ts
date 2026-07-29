@@ -1,4 +1,4 @@
-import type { PieceName } from './const'
+import type { Orientation, PieceName } from './const'
 
 export type { PieceName }
 
@@ -7,6 +7,38 @@ export type Rotate = `rotate-${'right' | 'left'}`
 export type Action = Direction | Rotate | 'push' | 'pause' | 'hold'
 /** `'GARBAGE'` is a filled cell with no owning piece — see `Field.addGarbage`. */
 export type Slot = PieceName | 'GARBAGE' | 0
+
+/**
+ * Compact active-piece view for opponent rendering / wire snapshots.
+ * Deliberately omits hold, bag, and lock-timer state.
+ */
+export type ActivePieceProjection = {
+  name: PieceName
+  x: number
+  y: number
+  orientation: Orientation
+}
+
+/**
+ * Deterministic board projection safe to send to opponents. Exposes neither
+ * the future piece queue nor any hidden RNG / hold state.
+ */
+export type GameProjection = {
+  width: number
+  height: number
+  board: Slot[][]
+  activePiece?: ActivePieceProjection
+  score: number
+  lines: number
+  level: number
+  gameOver: boolean
+}
+
+/** One garbage row with an explicit hole column, for reproducible deliveries. */
+export type GarbageRow = {
+  /** Column index of the empty cell in the garbage row. */
+  hole: number
+}
 
 /**
  * Optional, fire-and-forget callbacks the renderer can attach to a `Game` to

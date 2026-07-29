@@ -1,5 +1,4 @@
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { createHighScoreStore } from '@tetris/records'
 
@@ -15,8 +14,9 @@ import { createHighScoreStore } from '@tetris/records'
  * to exist yet.
  */
 
-const dataDir = fileURLToPath(new URL('./data', import.meta.url))
-const staticDir = fileURLToPath(new URL('../dist-web', import.meta.url))
+const appDir = process.cwd()
+const dataDir = join(appDir, 'server', 'data')
+const staticDir = join(appDir, 'dist-web')
 
 const store = createHighScoreStore(join(dataDir, 'high-score.json'))
 
@@ -27,6 +27,12 @@ const asyncHandler = (handler) => (req, res, next) =>
 const app = express()
 app.disable('x-powered-by') // don't advertise the framework/version
 app.use(express.json())
+
+// Container/platform liveness probe. Keep it independent from persisted data
+// so a storage failure can be reported by the records endpoint itself.
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({ status: 'ok' })
+})
 
 app.get(
   '/api/records',

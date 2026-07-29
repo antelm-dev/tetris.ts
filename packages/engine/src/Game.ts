@@ -5,7 +5,7 @@ import type { PieceName } from './const'
 import { MODES } from './modes'
 import type { ModeDef } from './modes'
 import { clearScore, comboScore, hardDropScore, perfectClearScore, softDropScore, spinNoClearScore } from './scoring'
-import type { Action, Direction, GameEvents } from './types'
+import type { Action, Direction, GameEvents, GameProjection, GarbageRow } from './types'
 
 /**
  * How long (ms) a grounded piece sits before it locks. The player's window to
@@ -20,6 +20,23 @@ const LOCK_DELAY = 500
  * giving finesse room. Landing on a *lower* row refills the budget.
  */
 const MAX_LOCK_RESETS = 15
+
+/**
+ * Maximum gravity cells applied in a single {@link Game.advance} call. A long
+ * stall (alt-tab, slow frame, large server catch-up) must not dump a dozen
+ * rows into one step.
+ */
+const MAX_GRAVITY_STEPS = 6
+
+/**
+ * Milliseconds a piece takes to fall one cell at a given level. Shared by the
+ * authoritative {@link Game.advance} path and any presentation-layer gravity
+ * clock that mirrors it. Explicitly milliseconds — the engine's sole time unit
+ * for gameplay advance.
+ */
+export function gravityIntervalMs(level: number): number {
+  return Math.max(70, 800 * Math.pow(0.82, level - 1))
+}
 
 export type RandomFn = () => number
 
@@ -72,6 +89,11 @@ export default class Game {
   private lockResets = 0
   /** Deepest row the piece has reached; falling past it refills the reset budget. */
   private lowestRow = -Infinity
+  /**
+   * Accumulated gravity time in milliseconds since the last cell fall.
+   * Advanced only by {@link advance}; reset on {@link start}.
+   */
+  private gravityAccMs = 0
   public activePiece?: Piece
   public field: Field
   private readonly random: RandomFn
@@ -83,7 +105,10 @@ export default class Game {
    * last set.
    */
   public mode: ModeDef
-  /** Active-gameplay time, in ms — accumulated in {@link tick}, frozen by pause/game-over/completion. */
+  /**
+   * Active-gameplay time, in ms — accumulated by {@link advance} (and the
+   * legacy {@link tick} lock clock), frozen by pause/game-over/completion.
+   */
   public elapsedMs = 0
   private _completed = false
 
@@ -139,31 +164,84 @@ export default class Game {
   }
 
   /**
-   * The lock-delay clock, advanced once per frame with `dt` in seconds.
+   * Deterministic gameplay advance used by the authoritative server (and any
+   * future headless / reconciled client). `dtMs` is **milliseconds** — the
+   * engine's single time unit for simulation.
    *
-   * A grounded piece doesn't lock immediately: it gets {@link LOCK_DELAY}
-   * milliseconds, and any successful move or rotation restarts that countdown
-   * (up to {@link MAX_LOCK_RESETS} times). That grace period is what makes a
-   * last-second slide or spin possible at all — at level 13 gravity is a 70 ms
-   * tick, and without a lock delay the window to spin into a slot is a single
-   * frame. Lifting off the floor again cancels the countdown entirely.
+   * Performs gravity (level interval, capped at {@link MAX_GRAVITY_STEPS}
+   * catch-up steps) and lock-delay progression in one call. Presentation-only
+   * motion stays outside the engine.
+   */
+  public advance(dtMs: number): void {
+    if (this.paused || this._gameOver || this._completed) return
+    if (dtMs <= 0) return
+
+    this.elapsedMs += dtMs
+    this.checkCompletion()
+    if (this._completed) return
+
+    const interval = gravityIntervalMs(this.level)
+    this.gravityAccMs += dtMs
+    let steps = 0
+    while (this.gravityAccMs >= interval && steps < MAX_GRAVITY_STEPS) {
+      this.gravityAccMs -= interval
+      this.update()
+      steps++
+    }
+
+    this.advanceLock(dtMs)
+  }
+
+  /**
+   * Legacy lock-delay clock for the existing renderer loop. `dt` is **seconds**.
    *
-   * This is also the clock for a mode's time target (Ultra): active-gameplay
-   * time only accrues here, so it is naturally frozen by the same pause/
-   * game-over guard as the lock-delay countdown, and stops the instant a run
-   * completes or ends.
+   * Prefer {@link advance} for new callers: it uses milliseconds and includes
+   * gravity. This method remains so the presentation layer can keep driving
+   * gravity via its own {@code Gravity} helper and only lock timing here.
    */
   public tick(dt: number): void {
     if (this.paused || this._gameOver || this._completed) return
     this.elapsedMs += dt * 1000
     this.checkCompletion()
-    if (this._completed || !this.activePiece) return
+    if (this._completed) return
+    this.advanceLock(dt * 1000)
+  }
+
+  /** Progress the grounded-piece lock countdown by `dtMs` milliseconds. */
+  private advanceLock(dtMs: number): void {
+    if (!this.activePiece) return
     if (!this.field.checkCollision(this.activePiece, 'down')) {
       this.lockTimer = 0
       return
     }
-    this.lockTimer += dt * 1000
+    this.lockTimer += dtMs
     if (this.lockTimer >= LOCK_DELAY) this.push()
+  }
+
+  /**
+   * Compact board / active-piece projection for opponent snapshots. Never
+   * includes the future queue, hold contents, bag, or lock-timer internals.
+   */
+  public project(): GameProjection {
+    const width = this.field.slots[0]?.length ?? 0
+    const height = this.field.slots.length
+    return {
+      width,
+      height,
+      board: this.field.slots.map((row) => [...row]),
+      activePiece: this.activePiece
+        ? {
+            name: this.activePiece.name,
+            x: this.activePiece.x,
+            y: this.activePiece.y,
+            orientation: this.activePiece.orientation
+          }
+        : undefined,
+      score: this.score,
+      lines: this.lines,
+      level: this.level,
+      gameOver: this._gameOver
+    }
   }
 
   /**
@@ -436,6 +514,7 @@ export default class Game {
     this.lines = 0
     this.level = 1
     this.elapsedMs = 0
+    this.gravityAccMs = 0
     this.holdPiece = undefined
     this.canHold = true
     this.initQueue()
@@ -460,13 +539,27 @@ export default class Game {
   }
 
   /**
-   * Push `count` garbage rows in from the bottom (see {@link Field.addGarbage}).
-   * A no-op once the game is already over. Ends the game if the incoming rows
-   * shove an occupied cell above the visible well.
+   * Push garbage into the well. Accepts either a row count (holes drawn from
+   * this game's RNG — local / legacy) or an explicit hole list (authoritative
+   * multiplayer, reproducible from the wire). A no-op once the game is already
+   * over. Ends the game if the incoming rows shove an occupied cell above the
+   * visible well.
    */
-  public receiveGarbage(count: number): void {
-    if (this._gameOver || this._completed || count <= 0) return
-    const toppedOut = this.field.addGarbage(count, this.random)
+  public receiveGarbage(countOrRows: number | readonly GarbageRow[]): void {
+    if (this._gameOver || this._completed) return
+
+    let count: number
+    let toppedOut: boolean
+    if (typeof countOrRows === 'number') {
+      count = countOrRows
+      if (count <= 0) return
+      toppedOut = this.field.addGarbage(count, this.random)
+    } else {
+      count = countOrRows.length
+      if (count === 0) return
+      toppedOut = this.field.addGarbageRows(countOrRows.map((row) => row.hole))
+    }
+
     this.events.onGarbageReceived?.(count)
     if (toppedOut) this.setGameOver()
   }

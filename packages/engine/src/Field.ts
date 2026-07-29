@@ -152,24 +152,34 @@ export default class Field {
   }
 
   /**
-   * Push `count` garbage rows in from the bottom, each solid except for one
-   * random hole, shifting every existing row up to make room. Returns `true`
-   * if any row shifted off the top was non-empty — a garbage-induced top-out.
+   * Push garbage rows in from the bottom with explicit hole columns, shifting
+   * every existing row up to make room. Returns `true` if any row shifted off
+   * the top was non-empty — a garbage-induced top-out.
    *
-   * `random` is injected (see {@link RandomFn}) rather than read from
-   * `Math.random`, so hole placement is deterministic under test.
+   * Authoritative multiplayer uses this so a delivery can be reproduced from
+   * the wire payload without consulting the recipient's RNG.
    */
-  public addGarbage(count: number, random: RandomFn): boolean {
+  public addGarbageRows(holes: readonly number[]): boolean {
     const width = this._slots[0].length
     let toppedOut = false
-    for (let i = 0; i < count; i++) {
+    for (const rawHole of holes) {
       if (this._slots[0].some((cell) => cell !== 0)) toppedOut = true
       this._slots.shift()
-      const hole = Math.floor(random() * width)
+      const hole = ((rawHole % width) + width) % width
       const row = new Array<Slot>(width).fill('GARBAGE')
       row[hole] = 0
       this._slots.push(row)
     }
     return toppedOut
+  }
+
+  /**
+   * Push `count` garbage rows in from the bottom, each solid except for one
+   * random hole. Hole placement is driven by the injected {@link RandomFn}.
+   */
+  public addGarbage(count: number, random: RandomFn): boolean {
+    const width = this._slots[0].length
+    const holes = Array.from({ length: count }, () => Math.floor(random() * width))
+    return this.addGarbageRows(holes)
   }
 }

@@ -164,4 +164,93 @@ describe('Realtime match (e2e)', () => {
     a.close()
     b.close()
   }, 20_000)
+
+  it('rejects an action for a room other than the socket current room', async () => {
+    const stamp = Date.now()
+    const tokenA = await register(app, `cross-a-${stamp}@example.com`)
+    const tokenB = await register(app, `cross-b-${stamp}@example.com`)
+    const tokenC = await register(app, `cross-c-${stamp}@example.com`)
+    const a = await connectGame(port, tokenA)
+    const b = await connectGame(port, tokenB)
+    const c = await connectGame(port, tokenC)
+
+    try {
+      const createdOne = waitForEvent<{ roomId: string }>(a, ServerEvent.RoomCreated)
+      a.emit(ClientEvent.RoomCreate, { name: 'first', maxPlayers: 2 })
+      const roomOne = (await createdOne).data.roomId
+
+      const joinedOne = waitForEvent(b, ServerEvent.RoomJoined)
+      b.emit(ClientEvent.RoomJoin, { roomId: roomOne })
+      await joinedOne
+
+      const createdTwo = waitForEvent<{ roomId: string }>(c, ServerEvent.RoomCreated)
+      c.emit(ClientEvent.RoomCreate, { name: 'second', maxPlayers: 2 })
+      const roomTwo = (await createdTwo).data.roomId
+
+      const joinedTwo = waitForEvent(a, ServerEvent.RoomJoined)
+      a.emit(ClientEvent.RoomJoin, { roomId: roomTwo })
+      await joinedTwo
+
+      const ready = waitForRoomReady(a, roomOne)
+      a.emit(ClientEvent.PlayerReady, { roomId: roomOne, ready: true })
+      b.emit(ClientEvent.PlayerReady, { roomId: roomOne, ready: true })
+      await ready
+
+      const started = waitForEvent(a, ServerEvent.GameStarted)
+      a.emit(ClientEvent.GameStart, { roomId: roomOne })
+      await started
+
+      let acknowledged = false
+      a.once(ServerEvent.ActionAcknowledged, () => {
+        acknowledged = true
+      })
+      a.emit(ClientEvent.PlayerAction, { roomId: roomOne, seq: 1, ts: Date.now(), action: 'left' })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(acknowledged).toBe(false)
+    } finally {
+      a.close()
+      b.close()
+      c.close()
+    }
+  }, 20_000)
+
+  it('does not let a non-member leave and terminate an active match', async () => {
+    const stamp = Date.now()
+    const tokenA = await register(app, `leave-a-${stamp}@example.com`)
+    const tokenB = await register(app, `leave-b-${stamp}@example.com`)
+    const tokenC = await register(app, `leave-c-${stamp}@example.com`)
+    const a = await connectGame(port, tokenA)
+    const b = await connectGame(port, tokenB)
+    const c = await connectGame(port, tokenC)
+
+    try {
+      const created = waitForEvent<{ roomId: string }>(a, ServerEvent.RoomCreated)
+      a.emit(ClientEvent.RoomCreate, { name: 'protected', maxPlayers: 2 })
+      const roomId = (await created).data.roomId
+
+      const joined = waitForEvent(b, ServerEvent.RoomJoined)
+      b.emit(ClientEvent.RoomJoin, { roomId })
+      await joined
+
+      const ready = waitForRoomReady(a, roomId)
+      a.emit(ClientEvent.PlayerReady, { roomId, ready: true })
+      b.emit(ClientEvent.PlayerReady, { roomId, ready: true })
+      await ready
+
+      const started = waitForEvent(a, ServerEvent.GameStarted)
+      a.emit(ClientEvent.GameStart, { roomId })
+      await started
+      expect(games.hasActiveMatch(roomId)).toBe(true)
+
+      c.emit(ClientEvent.RoomLeave, { roomId })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(games.hasActiveMatch(roomId)).toBe(true)
+    } finally {
+      a.close()
+      b.close()
+      c.close()
+    }
+  }, 20_000)
 })

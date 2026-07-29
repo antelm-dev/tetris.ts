@@ -1,0 +1,53 @@
+{
+  "name": "@tetris/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NestJS + Fastify API for Tetris — REST, WebSocket gateway and the future authoritative game server",
+  "license": "MIT",
+  "scripts": {
+    "prebuild": "pnpm -C ../../packages/protocol build",
+    "build": "nest build",
+    "predev": "pnpm -C ../../packages/protocol build",
+    "dev": "nest start --watch --builder swc",
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js",
+    "pretest": "pnpm -C ../../packages/protocol build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.15",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/platform-fastify": "^10.4.15",
+    "@nestjs/platform-socket.io": "^10.4.15",
+    "@nestjs/websockets": "^10.4.15",
+    "@tetris/engine": "workspace:*",
+    "@tetris/protocol": "workspace:*",
+    "argon2": "^0.41.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "fastify": "^4.28.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.9",
+    "@nestjs/schematics": "^10.2.3",
+    "@nestjs/testing": "^10.4.15",
+    "@swc/cli": "^0.5.2",
+    "@swc/core": "^1.10.7",
+    "@types/node": "^22.8.6",
+    "socket.io-client": "^4.8.1",
+    "typescript": "^5.9.2",
+    "unplugin-swc": "^1.5.1",
+    "vitest": "^4.1.9"
+  }
+}

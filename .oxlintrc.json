@@ -7,6 +7,7 @@
     "typescript/consistent-type-imports": "warn",
     "typescript/no-explicit-any": "warn",
     "unicorn/prefer-node-protocol": "error",
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
 
     "eslint/no-shadow": "off",
     "eslint/no-underscore-dangle": "off",
@@ -17,22 +18,56 @@
     "unicorn/no-new-array": "off",
     "unicorn/require-module-specifiers": "off"
   },
-  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "dist-web", "release", "server/data"],
+  "ignorePatterns": [
+    "apps/tetris/main/generated",
+    "dist-main",
+    "dist-renderer",
+    "dist-web",
+    "release",
+    "apps/tetris/server/data",
+    "apps/api/dist",
+    "packages/protocol/dist"
+  ],
   "overrides": [
     {
-      "files": ["main/**/*.ts", "scripts/**/*.mjs", "server/**/*.mjs", "*.config.*", "test/**/*.ts"],
+      "files": [
+        "apps/tetris/main/**/*.ts",
+        "apps/tetris/scripts/**/*.mjs",
+        "apps/tetris/server/**/*.mjs",
+        "*.config.*",
+        "apps/tetris/test/**/*.ts"
+      ],
       "env": { "node": true }
     },
-    { "files": ["renderer/**/*.ts"], "env": { "browser": true } },
+    { "files": ["apps/tetris/renderer/**/*.ts"], "env": { "browser": true } },
+    { "files": ["apps/api/**/*.ts", "packages/protocol/**/*.ts"], "env": { "node": true } },
     {
-      "files": ["server/**/*.mjs"],
+      "files": ["apps/api/**/*.ts"],
+      "rules": {
+        "typescript/no-extraneous-class": ["error", { "allowWithDecorator": true }],
+        "import/no-unassigned-import": ["error", { "allow": ["reflect-metadata"] }],
+        "typescript/consistent-type-imports": "off"
+      }
+    },
+    {
+      "files": ["apps/api/**/*.spec.ts", "apps/api/test/**/*.ts"],
+      "plugins": ["vitest"],
+      "env": { "vitest": true },
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "vitest/valid-expect": "off"
+      }
+    },
+    {
+      "files": ["apps/tetris/server/**/*.mjs"],
       "rules": {
         "promise/no-callback-in-promise": ["error", { "exceptions": ["next"] }]
       }
     },
     { "files": ["**/*.d.ts"], "rules": { "typescript/consistent-type-imports": "off" } },
     {
-      "files": ["test/**/*.ts"],
+      "files": ["apps/tetris/test/**/*.ts"],
       "plugins": ["vitest"],
       "env": { "vitest": true },
       "rules": {

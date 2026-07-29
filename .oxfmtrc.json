@@ -5,5 +5,15 @@
   "trailingComma": "none",
   "printWidth": 120,
   "arrowParens": "always",
-  "ignorePatterns": ["main/generated", "dist-main", "dist-renderer", "release", "**/*.md", "**/*.yml", "**/*.yaml"]
+  "ignorePatterns": [
+    "apps/tetris/main/generated",
+    "dist-main",
+    "dist-renderer",
+    "release",
+    "apps/api/dist",
+    "packages/protocol/dist",
+    "**/*.md",
+    "**/*.yml",
+    "**/*.yaml"
+  ]
 }

@@ -1,0 +1,12 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+onlyBuiltDependencies:
+  - '@swc/core'
+  - argon2
+  - electron
+  - electron-ipc-module
+  - electron-winstaller
+  - esbuild
+  - rollup-plugin-electron-run

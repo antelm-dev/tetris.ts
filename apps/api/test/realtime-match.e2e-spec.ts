@@ -264,4 +264,60 @@ describe('Realtime match (e2e)', () => {
       c.close()
     }
   }, 20_000)
+
+  it('rejects a second authenticated socket for a player already in a live room', async () => {
+    const stamp = Date.now()
+    const tokenA = await register(app, `duplicate-a-${stamp}@example.com`)
+    const tokenB = await register(app, `duplicate-b-${stamp}@example.com`)
+    const a = await connectGame(port, tokenA)
+    const b = await connectGame(port, tokenB)
+    let duplicate: Socket | undefined
+
+    try {
+      const created = waitForEvent<{ roomId: string }>(a, ServerEvent.RoomCreated)
+      a.emit(ClientEvent.RoomCreate, { name: 'duplicate', maxPlayers: 2 })
+      const roomId = (await created).data.roomId
+
+      const joined = waitForEvent(b, ServerEvent.RoomJoined)
+      b.emit(ClientEvent.RoomJoin, { roomId })
+      await joined
+
+      const ready = waitForRoomReady(a, roomId)
+      a.emit(ClientEvent.PlayerReady, { roomId, ready: true })
+      b.emit(ClientEvent.PlayerReady, { roomId, ready: true })
+      await ready
+
+      const started = waitForEvent(a, ServerEvent.GameStarted)
+      a.emit(ClientEvent.GameStart, { roomId })
+      await started
+
+      duplicate = io(`http://127.0.0.1:${port}/game`, {
+        transports: ['websocket'],
+        forceNew: true,
+        reconnection: false
+      })
+      const outcome = await new Promise<'connected' | { code: string }>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Timeout waiting for duplicate authentication')), 3000)
+        duplicate?.on('connect', () => {
+          duplicate?.emit(ClientEvent.Authenticate, { protocolVersion: PROTOCOL_VERSION, token: tokenA })
+        })
+        duplicate?.once(ServerEvent.Connected, () => {
+          clearTimeout(timer)
+          resolve('connected')
+        })
+        duplicate?.once(ServerEvent.Error, (envelope: Envelope<{ code: string }>) => {
+          clearTimeout(timer)
+          resolve(envelope.data)
+        })
+        duplicate?.once('connect_error', reject)
+      })
+
+      expect(outcome).toEqual(expect.objectContaining({ code: 'ALREADY_CONNECTED' }))
+      expect(games.hasActiveMatch(roomId)).toBe(true)
+    } finally {
+      duplicate?.close()
+      a.close()
+      b.close()
+    }
+  }, 20_000)
 })

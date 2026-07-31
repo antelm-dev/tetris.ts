@@ -1,9 +1,14 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { Game, mulberry32 } from '@tetris/engine'
-import { buildOnlineLobbyView, nextOnlineSceneAction, type OnlineLobbyView } from '@tetris/renderer/hud/online/model'
+import {
+  buildLobbyEntries,
+  buildOnlineLobbyView,
+  nextOnlineSceneAction,
+  type OnlineLobbyView
+} from '@tetris/renderer/hud/online/model'
 import { OnlineLobby } from '@tetris/renderer/hud/online/OnlineLobby'
 import type { OnlineClient, OnlineClientState } from '@tetris/renderer/app/online'
 import { pieceFromWire } from '@tetris/renderer/scene/remote'
@@ -195,15 +200,67 @@ describe('online menu feature flag contract', () => {
   })
 })
 
-describe('OnlineLobby overlay DOM', () => {
-  let parent: HTMLElement
+describe('lobby card entries', () => {
+  it('offers both auth forms when signed out', () => {
+    const entries = buildLobbyEntries(buildOnlineLobbyView(emptyState()))
+    const fields = entries.flatMap((e) => (e.kind === 'field' ? [e.id] : []))
+    const actions = entries.flatMap((e) => (e.kind === 'action' ? [e.id] : []))
+    expect(fields).toEqual(['email', 'password', 'regName', 'regEmail', 'regPassword'])
+    expect(actions).toEqual(['login', 'register', 'exit'])
+  })
+
+  it('shows players and a disabled Start until everyone is ready', () => {
+    const room = {
+      roomId: 'room-1',
+      name: 'Private room',
+      hostUserId: 'u1',
+      maxPlayers: 2,
+      isPrivate: true,
+      players: [
+        { userId: 'u1', displayName: 'Ada', ready: true, connected: true },
+        { userId: 'u2', displayName: 'Bob', ready: false, connected: true }
+      ]
+    } as unknown as OnlineClientState['room']
+    const view = buildOnlineLobbyView(
+      emptyState({
+        connection: 'ready',
+        lobby: 'in-room',
+        user: { id: 'u1', email: 'a@b.co', displayName: 'Ada' },
+        room
+      })
+    )
+    const entries = buildLobbyEntries(view)
+    const start = entries.find((e) => e.kind === 'action' && e.id === 'start')
+    expect(start).toMatchObject({ disabled: true })
+    expect(entries.filter((e) => e.kind === 'stat')).toHaveLength(3) // room id + 2 players
+  })
+
+  it('reduces the terminal panel to a single way out', () => {
+    const view = buildOnlineLobbyView(
+      emptyState({
+        connection: 'ready',
+        lobby: 'finished',
+        user: { id: 'u1', email: 'a@b.co', displayName: 'Ada' }
+      })
+    )
+    const entries = buildLobbyEntries(view)
+    expect(entries.flatMap((e) => (e.kind === 'action' ? [e.id] : []))).toEqual(['exit'])
+  })
+})
+
+describe('OnlineLobby p5 card', () => {
   let state: OnlineClientState
   let listeners: Set<(s: OnlineClientState) => void>
   let client: OnlineClient
 
+  const type = (text: string): void => {
+    for (const key of text) window.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true }))
+  }
+  const press = (key: string, init: KeyboardEventInit = {}): void => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, ...init }))
+  }
+
   beforeEach(() => {
-    parent = document.createElement('div')
-    document.body.appendChild(parent)
     state = emptyState()
     listeners = new Set()
     client = {
@@ -218,51 +275,23 @@ describe('OnlineLobby overlay DOM', () => {
     } as unknown as OnlineClient
   })
 
-  afterEach(() => {
-    parent.remove()
-    document.getElementById('online-lobby-styles')?.remove()
-  })
-
-  it('preserves typed credentials across client-driven re-renders and dispose removes root', () => {
-    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
-    lobby.show()
-
-    const email = parent.querySelector<HTMLInputElement>('form[data-action="login"] input[name="email"]')
-    expect(email).toBeTruthy()
-    email!.value = 'player@example.com'
-    email!.focus()
-
-    state = emptyState({
-      lastError: { code: 'AUTH_FAILED', message: 'Invalid credentials' }
-    })
-    for (const listener of listeners) listener(state)
-
-    const emailAfter = parent.querySelector<HTMLInputElement>('form[data-action="login"] input[name="email"]')
-    expect(emailAfter?.value).toBe('player@example.com')
-    expect(document.activeElement).toBe(emailAfter)
-
-    expect(parent.querySelector('.online-lobby')).toBeTruthy()
-    lobby.dispose()
-    expect(parent.querySelector('.online-lobby')).toBeNull()
-    expect(document.getElementById('online-lobby-styles')).toBeNull()
-  })
-
-  it('Sign in click reaches login/connect with typed FormData', async () => {
+  it('types credentials and submits login, keeping values across state pushes', async () => {
     const login = vi.fn(async () => undefined)
     const connect = vi.fn(async () => undefined)
-    client = {
-      ...client,
-      login,
-      connect
-    } as unknown as OnlineClient
-
-    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
+    const lobby = new OnlineLobby({ ...client, login, connect } as unknown as OnlineClient, {
+      onExit: () => undefined
+    })
     lobby.show()
 
-    const form = parent.querySelector<HTMLFormElement>('form[data-action="login"]')!
-    form.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'ada@example.com'
-    form.querySelector<HTMLInputElement>('input[name="password"]')!.value = 's3cret'
-    form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+    type('ada@example.com')
+
+    // A client-driven rebuild (here: an error push) must not wipe the field.
+    state = emptyState({ lastError: { code: 'AUTH_FAILED', message: 'Invalid credentials' } })
+    for (const listener of listeners) listener(state)
+
+    press('Tab')
+    type('s3cret')
+    press('Enter')
 
     await vi.waitFor(() => {
       expect(login).toHaveBeenCalledWith({ email: 'ada@example.com', password: 's3cret' })
@@ -271,39 +300,35 @@ describe('OnlineLobby overlay DOM', () => {
     lobby.dispose()
   })
 
-  it('Register click reaches register with typed FormData', async () => {
+  it('registers from the second form', async () => {
     const register = vi.fn(async () => undefined)
     const login = vi.fn(async () => undefined)
     const connect = vi.fn(async () => undefined)
-    client = {
-      ...client,
-      register,
-      login,
-      connect
-    } as unknown as OnlineClient
-
-    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
+    const lobby = new OnlineLobby({ ...client, register, login, connect } as unknown as OnlineClient, {
+      onExit: () => undefined
+    })
     lobby.show()
 
-    const form = parent.querySelector<HTMLFormElement>('form[data-action="register"]')!
-    form.querySelector<HTMLInputElement>('input[name="displayName"]')!.value = 'Ada'
-    form.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'ada@example.com'
-    form.querySelector<HTMLInputElement>('input[name="password"]')!.value = 's3cret!!'
-    form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+    // email, password, login, regName …
+    press('ArrowDown')
+    press('ArrowDown')
+    press('ArrowDown')
+    type('Ada')
+    press('Tab')
+    type('ada@example.com')
+    press('Tab')
+    type('s3cret!!')
+    press('Enter')
 
     await vi.waitFor(() => {
-      expect(register).toHaveBeenCalledWith({
-        email: 'ada@example.com',
-        displayName: 'Ada',
-        password: 's3cret!!'
-      })
+      expect(register).toHaveBeenCalledWith({ email: 'ada@example.com', displayName: 'Ada', password: 's3cret!!' })
       expect(login).not.toHaveBeenCalled()
       expect(connect).toHaveBeenCalled()
     })
     lobby.dispose()
   })
 
-  it('Join by ID and create room pass typed values through submit', async () => {
+  it('creates and joins rooms from the typed values', async () => {
     const joinRoom = vi.fn()
     const createRoom = vi.fn()
     state = emptyState({
@@ -311,41 +336,39 @@ describe('OnlineLobby overlay DOM', () => {
       user: { id: 'u1', email: 'a@b.co', displayName: 'Ada' },
       sessionId: 's1'
     })
-    client = {
-      getState: () => state,
-      get user() {
-        return state.user
-      },
-      subscribe: (listener: (s: OnlineClientState) => void) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-      joinRoom,
-      createRoom
-    } as unknown as OnlineClient
-
-    const lobby = new OnlineLobby(client, parent, { onExit: () => undefined })
+    const lobby = new OnlineLobby({ ...client, joinRoom, createRoom } as unknown as OnlineClient, {
+      onExit: () => undefined
+    })
     lobby.show()
 
-    const joinForm = parent.querySelector<HTMLFormElement>('form[data-action="join-room"]')!
-    joinForm.querySelector<HTMLInputElement>('input[name="roomId"]')!.value = 'room-abc'
-    joinForm.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+    // roomName is prefilled with the default; clear it before typing.
+    for (let i = 0; i < 'Private room'.length; i++) press('Backspace')
+    type('Night shift')
+    press('Enter')
+    await vi.waitFor(() => {
+      expect(createRoom).toHaveBeenCalledWith({ name: 'Night shift', maxPlayers: 2, isPrivate: true })
+    })
 
+    // roomName → create-room → roomId
+    press('ArrowDown')
+    press('ArrowDown')
+    type('room-abc')
+    press('Enter')
     await vi.waitFor(() => {
       expect(joinRoom).toHaveBeenCalledWith('room-abc')
     })
-
-    const createForm = parent.querySelector<HTMLFormElement>('form[data-action="create-room"]')!
-    createForm.querySelector<HTMLInputElement>('input[name="roomName"]')!.value = 'Night shift'
-    createForm.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
-
-    await vi.waitFor(() => {
-      expect(createRoom).toHaveBeenCalledWith({
-        name: 'Night shift',
-        maxPlayers: 2,
-        isPrivate: true
-      })
-    })
     lobby.dispose()
+  })
+
+  it('exits on Escape and stops listening once disposed', () => {
+    const onExit = vi.fn()
+    const lobby = new OnlineLobby(client, { onExit })
+    lobby.show()
+    press('Escape')
+    expect(onExit).toHaveBeenCalledTimes(1)
+
+    lobby.dispose()
+    press('Escape')
+    expect(onExit).toHaveBeenCalledTimes(1)
   })
 })

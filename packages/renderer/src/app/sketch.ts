@@ -230,7 +230,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
     scene = 'menu'
     menu.hide()
     onlineClient = createOnlineClient(host?.apiOrigin)
-    onlineLobby = new OnlineLobby(onlineClient, el, {
+    onlineLobby = new OnlineLobby(onlineClient, {
       onExit: () => openMenu()
     })
     onlineLobby.show()
@@ -348,25 +348,33 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
     // nothing for these to leak into while `scene !== 'menu'`.
     let lastCursor: 'pointer' | 'default' = 'default'
     const syncCursor = (): void => {
-      const next = scene === 'menu' && !onlineLobby?.isOpen ? menu.cursorStyle(p.mouseX, p.mouseY) : 'default'
+      const next = onlineLobby?.isOpen
+        ? onlineLobby.cursorStyle(p.mouseX, p.mouseY)
+        : scene === 'menu'
+          ? menu.cursorStyle(p.mouseX, p.mouseY)
+          : 'default'
       if (next === lastCursor) return
       lastCursor = next
       p.cursor(next === 'pointer' ? p.HAND : p.ARROW)
     }
 
     p.mouseMoved = (): void => {
-      if (onlineLobby?.isOpen) return
-      menu.pointer(p.mouseX, p.mouseY)
+      if (onlineLobby?.isOpen) onlineLobby.pointer(p.mouseX, p.mouseY)
+      else menu.pointer(p.mouseX, p.mouseY)
       syncCursor()
     }
     p.mousePressed = (): void => {
-      if (onlineLobby?.isOpen) return
-      menu.click(p.mouseX, p.mouseY)
+      if (onlineLobby?.isOpen) onlineLobby.click(p.mouseX, p.mouseY)
+      else menu.click(p.mouseX, p.mouseY)
       syncCursor()
     }
     p.mouseWheel = (event?: object): boolean | void => {
-      if (onlineLobby?.isOpen || !menu.isOpen) return
       const delta = (event as { delta?: number } | undefined)?.delta ?? 0
+      if (onlineLobby?.isOpen) {
+        onlineLobby.wheel(delta)
+        return false
+      }
+      if (!menu.isOpen) return
       menu.wheel(delta)
       return false
     }
@@ -417,6 +425,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
       fx.update(dt)
       ui.update(dt)
       menu.update(dt)
+      onlineLobby?.update(dt)
       bg.setLevel(inOnline ? (onlineClient?.localGame?.level ?? game.level) : game.level)
       bg.update(dt)
 
@@ -509,6 +518,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
         })
       }
       if (!onlineLobby?.isOpen) menu.paint(p)
+      onlineLobby?.paint(p)
     }
   }, el)
 }

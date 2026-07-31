@@ -198,9 +198,7 @@ export class OnlineLobby {
     this.root.hidden = false
     const preserved = captureFieldState(this.root)
 
-    const error = v.errorText
-      ? `<p class="online-lobby__error" role="alert">${escapeHtml(v.errorText)}</p>`
-      : ''
+    const error = v.errorText ? `<p class="online-lobby__error" role="alert">${escapeHtml(v.errorText)}</p>` : ''
     const busyAttr = this.busy ? 'aria-busy="true"' : ''
 
     if (v.panel === 'auth' || !this.client.user) {
@@ -319,11 +317,7 @@ export class OnlineLobby {
 }
 
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 interface FieldSnapshot {

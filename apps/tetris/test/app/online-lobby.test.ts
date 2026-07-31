@@ -3,11 +3,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Game, mulberry32 } from '@tetris/engine'
-import {
-  buildOnlineLobbyView,
-  nextOnlineSceneAction,
-  type OnlineLobbyView
-} from '@tetris/renderer/hud/online/model'
+import { buildOnlineLobbyView, nextOnlineSceneAction, type OnlineLobbyView } from '@tetris/renderer/hud/online/model'
 import { OnlineLobby } from '@tetris/renderer/hud/online/OnlineLobby'
 import type { OnlineClient, OnlineClientState } from '@tetris/renderer/app/online'
 import { pieceFromWire } from '@tetris/renderer/scene/remote'
@@ -159,12 +155,9 @@ describe('online scene lifecycle helpers', () => {
       )
     ).toBe('enter-match')
 
-    expect(
-      nextOnlineSceneAction(
-        { sceneIsOnline: false, lobby: 'in-room' },
-        emptyState({ lobby: 'starting' })
-      )
-    ).toBe('none')
+    expect(nextOnlineSceneAction({ sceneIsOnline: false, lobby: 'in-room' }, emptyState({ lobby: 'starting' }))).toBe(
+      'none'
+    )
   })
 
   it('returns leave-to-menu when lobby clears while online', () => {

@@ -31,7 +31,10 @@ export function authPanelFromClient(state: OnlineClientState): boolean {
   return !!state.user
 }
 
-export function buildOnlineLobbyView(state: OnlineClientState, opts: { matchSceneActive?: boolean } = {}): OnlineLobbyView {
+export function buildOnlineLobbyView(
+  state: OnlineClientState,
+  opts: { matchSceneActive?: boolean } = {}
+): OnlineLobbyView {
   const userId = state.user?.id
   const room = state.room
   const players =

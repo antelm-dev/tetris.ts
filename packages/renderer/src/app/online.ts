@@ -7,15 +7,7 @@
  *
  * Feature flag (UI only, not used here): `online_multiplayer_ui`.
  */
-import {
-  COLS,
-  Game,
-  ROWS,
-  mulberry32,
-  type Action,
-  type GameEvents,
-  type GameProjection
-} from '@tetris/engine'
+import { COLS, Game, ROWS, mulberry32, type Action, type GameEvents, type GameProjection } from '@tetris/engine'
 import {
   ClientEvent,
   PROTOCOL_VERSION,
@@ -84,13 +76,7 @@ export interface LoginInput {
 // Public state
 // ---------------------------------------------------------------------------
 
-export type OnlineConnectionPhase =
-  | 'idle'
-  | 'connecting'
-  | 'authenticating'
-  | 'ready'
-  | 'disconnected'
-  | 'error'
+export type OnlineConnectionPhase = 'idle' | 'connecting' | 'authenticating' | 'ready' | 'disconnected' | 'error'
 
 export type OnlineLobbyPhase = 'none' | 'in-room' | 'starting' | 'in-match' | 'finished'
 
@@ -786,6 +772,9 @@ export class OnlineClient {
 }
 
 /** Convenience: build a client from a {@link Host}-like api origin. */
-export function createOnlineClient(apiOrigin?: string, options: Omit<OnlineClientOptions, 'apiOrigin'> = {}): OnlineClient {
+export function createOnlineClient(
+  apiOrigin?: string,
+  options: Omit<OnlineClientOptions, 'apiOrigin'> = {}
+): OnlineClient {
   return new OnlineClient({ ...options, apiOrigin })
 }

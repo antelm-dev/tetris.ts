@@ -235,10 +235,7 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
     })
     onlineLobby.show()
     onlineUnsub = onlineClient.subscribe((state) => {
-      const action = nextOnlineSceneAction(
-        { sceneIsOnline: scene === 'online', lobby: state.lobby },
-        state
-      )
+      const action = nextOnlineSceneAction({ sceneIsOnline: scene === 'online', lobby: state.lobby }, state)
       if (action === 'enter-match') enterOnlineMatch()
       else if (action === 'leave-to-menu' && scene === 'online') openMenu()
     })

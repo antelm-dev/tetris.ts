@@ -89,7 +89,11 @@ export class GamesService implements OnModuleDestroy {
     for (const roomId of [...this.matches.keys()]) this.endMatch(roomId)
   }
 
-  createSession(roomId: string, userId: string, engine: ConstructorParameters<typeof EngineGameSession>[1]): AuthoritativeGameSession {
+  createSession(
+    roomId: string,
+    userId: string,
+    engine: ConstructorParameters<typeof EngineGameSession>[1]
+  ): AuthoritativeGameSession {
     const session = new EngineGameSession(userId, engine)
     const room = this.sessions.get(roomId) ?? new Map<string, AuthoritativeGameSession>()
     room.set(userId, session)

@@ -1,8 +1,8 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { defineConfig, loadEnv } from "vite";
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
 
-const packageRoot = path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * Renderer-only Vite config, shared by both build targets. The Electron
@@ -20,34 +20,26 @@ const packageRoot = path.dirname(fileURLToPath(import.meta.url));
  * package root so `.env.web` / `.env.electron` (and `*.local` overrides) load.
  */
 export default defineConfig(({ mode }) => {
-  const isElectron = mode === "electron";
-  const env = loadEnv(mode, packageRoot, "");
-  const sourcemap =
-    env.TETRIS_SOURCEMAP === "1" || env.TETRIS_SOURCEMAP === "true";
-  const apiPort = Number(process.env.PORT ?? 4000);
+  const isElectron = mode === 'electron'
+  const env = loadEnv(mode, packageRoot, '')
+  const sourcemap = env.TETRIS_SOURCEMAP === '1' || env.TETRIS_SOURCEMAP === 'true'
+  const apiPort = Number(process.env.PORT ?? 4000)
 
   return {
-    root: "renderer",
+    root: 'renderer',
     envDir: packageRoot,
-    base: env.VITE_BASE || "/",
+    base: env.VITE_BASE || '/',
     // Static assets (sounds) live with the shared game UI in @tetris/renderer,
     // not in this app shell, so both the desktop and (future) web app serve the
     // same files from one source of truth.
-    publicDir: fileURLToPath(
-      new URL("../../packages/renderer/public", import.meta.url),
-    ),
+    publicDir: fileURLToPath(new URL('../../packages/renderer/public', import.meta.url)),
     build: {
-      outDir: isElectron ? "../dist-renderer" : "../dist-web",
+      outDir: isElectron ? '../dist-renderer' : '../dist-web',
       emptyOutDir: true,
       sourcemap,
       rollupOptions: isElectron
-        ? {
-            input: fileURLToPath(
-              new URL("./renderer/index.electron.html", import.meta.url),
-            ),
-            external: ["express"],
-          }
-        : { external: ["electron-ipc-module"] },
+        ? { input: fileURLToPath(new URL('./renderer/index.electron.html', import.meta.url)) }
+        : undefined
     },
     server: {
       port: isElectron ? 5173 : 5174,
@@ -55,7 +47,7 @@ export default defineConfig(({ mode }) => {
       // The web dev server proxies the API to the Express server (see
       // `server/index.mjs`, started alongside Vite by `pnpm dev:web`).
       // Electron talks to the main process over IPC instead.
-      proxy: isElectron ? undefined : { "/api": `http://localhost:${apiPort}` },
-    },
-  };
-});
+      proxy: isElectron ? undefined : { '/api': `http://localhost:${apiPort}` }
+    }
+  }
+})

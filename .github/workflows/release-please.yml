@@ -86,7 +86,10 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || needs.release-please.outputs.tag_name }}
         run: |
           shopt -s nullglob
-          files=(apps/tetris/release/*.{exe,dmg,zip,AppImage,deb,yml,yaml,blockmap})
+          files=(
+            apps/tetris/release/*.{exe,dmg,zip,AppImage,deb,blockmap}
+            apps/tetris/release/{latest,beta}*.{yml,yaml}
+          )
           if ((${#files[@]} == 0)); then
             echo "No release artifacts found in apps/tetris/release/"
             ls -la apps/tetris/release/ || true

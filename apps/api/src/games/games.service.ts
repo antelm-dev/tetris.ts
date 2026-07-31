@@ -86,7 +86,7 @@ export class GamesService implements OnModuleDestroy {
   private readonly matches = new Map<string, MatchRuntime>()
 
   onModuleDestroy(): void {
-    for (const roomId of [...this.matches.keys()]) this.endMatch(roomId)
+    for (const roomId of this.matches.keys()) this.endMatch(roomId)
   }
 
   createSession(

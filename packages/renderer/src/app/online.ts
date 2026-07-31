@@ -755,14 +755,19 @@ export class OnlineClient {
     return {
       ...this.state,
       user: this.state.user ? { ...this.state.user } : null,
-      room: this.state.room ? { ...this.state.room, players: this.state.room.players.map((p) => ({ ...p })) } : null,
+      room: this.state.room
+        ? { ...this.state.room, players: this.state.room.players.map((p) => structuredClone(p)) }
+        : null,
       match: match
         ? {
             ...match,
             remote: match.remote ? { ...match.remote, board: match.remote.board.map((row) => [...row]) } : null,
             elimination: match.elimination ? { ...match.elimination } : null,
             gameOver: match.gameOver
-              ? { ...match.gameOver, standings: match.gameOver.standings.map((s) => ({ ...s })) }
+              ? {
+                  ...match.gameOver,
+                  standings: match.gameOver.standings.map((s) => structuredClone(s))
+                }
               : null
           }
         : null,

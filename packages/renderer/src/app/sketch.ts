@@ -258,6 +258,9 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
     onSelectMode: startSolo,
     onVersus: startVersus,
     onOnlineVersus: isOnlineMultiplayerUiEnabled() ? openOnline : undefined,
+    getVersion: host?.getVersion,
+    onCheckForUpdates: host?.checkForUpdates,
+    onOpenChangelog: host?.openChangelog,
     getStatistics: () => statistics.snapshot(),
     onQuit: host?.quit
   })

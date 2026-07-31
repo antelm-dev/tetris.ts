@@ -2,8 +2,9 @@ import type { Bind } from '../../config/keymap'
 import type { BotDifficulty } from '@tetris/bot/types'
 import type { ModeId } from '@tetris/engine/modes'
 import type { StatisticsState } from '../../app/statistics'
+import type { UpdateCheckResult } from '../../app/host'
 
-export type Screen = 'main' | 'solo' | 'statistics' | 'settings' | 'versus' | 'online'
+export type Screen = 'main' | 'solo' | 'statistics' | 'settings' | 'versus' | 'local-versus' | 'online' | 'about'
 
 export interface Rect {
   x: number
@@ -15,7 +16,9 @@ export interface Rect {
 export type RowId =
   | 'solo'
   | 'versus'
+  | 'local-versus'
   | 'online'
+  | 'about'
   | 'settings'
   | 'statistics'
   | 'quit'
@@ -41,6 +44,10 @@ export type RowId =
   | 'versus:back'
   | 'online:start'
   | 'online:back'
+  | 'about:version'
+  | 'about:update'
+  | 'about:changelog'
+  | 'about:back'
   | `mode:${ModeId}`
 
 export interface Row {
@@ -54,6 +61,8 @@ export interface Row {
   bind?: Bind
   /** `primary` reads as the main CTA (Solo); `secondary` recedes a row that's still enabled but not the focus. */
   emphasis?: 'primary' | 'secondary'
+  /** Right-aligned text for a non-interactive display row. */
+  value?: string
 }
 
 export type Entry =
@@ -72,6 +81,12 @@ export interface MenuHandlers {
    * keeps the Online row hidden so Solo/local Versus stay the default (AC-05).
    */
   onOnlineVersus?: () => void
+  /** Read the application version shown on the About screen. */
+  getVersion?: () => Promise<string>
+  /** Ask the host's updater to check its configured release feed. */
+  onCheckForUpdates?: () => Promise<UpdateCheckResult>
+  /** Open the public changelog in the user's browser. */
+  onOpenChangelog?: () => void
   /** Quit the app; the row is only shown when this is provided. */
   onQuit?: () => void
   /** Read the latest local career totals whenever the Statistics screen opens or repaints. */

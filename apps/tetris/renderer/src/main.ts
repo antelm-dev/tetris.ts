@@ -1,5 +1,8 @@
 import '@tetris/renderer/styles.css'
 import { EMPTY_RECORDS, render, type HighScores, type Host } from '@tetris/renderer'
+import appPackage from '../../package.json'
+
+const CHANGELOG_URL = 'https://github.com/antelm-dev/tetris.ts/blob/main/CHANGELOG.md'
 
 /**
  * Solo records persisted through the small Express API (see `server/`)
@@ -36,7 +39,9 @@ const scores: HighScores = {
 
 /** Same-origin by default (Vite `/api` proxy for records). Override for Nest online API. */
 const host: Host = {
-  apiOrigin: import.meta.env.VITE_API_ORIGIN || undefined
+  apiOrigin: import.meta.env.VITE_API_ORIGIN || undefined,
+  getVersion: async () => appPackage.version,
+  openChangelog: () => window.open(CHANGELOG_URL, '_blank', 'noopener')
 }
 
 window.addEventListener('DOMContentLoaded', () => {

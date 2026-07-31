@@ -1,6 +1,8 @@
 import '@tetris/renderer/styles.css'
 import { render, type Host } from '@tetris/renderer'
 
+const CHANGELOG_URL = 'https://github.com/antelm-dev/tetris.ts/blob/main/CHANGELOG.md'
+
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -9,6 +11,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const host: Host | undefined = bridge
     ? {
         quit: () => bridge.window.close(),
+        getVersion: () => bridge.system.getVersion(),
+        checkForUpdates: () => bridge.update.check(),
+        openChangelog: () => window.open(CHANGELOG_URL, '_blank', 'noopener'),
         // Electron has no same-origin API; point at the Nest online service.
         apiOrigin: import.meta.env.VITE_API_ORIGIN || undefined
       }

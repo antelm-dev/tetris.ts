@@ -15,10 +15,20 @@ export interface HighScores {
   onBeaten: (cb: (mode: ModeId, records: RecordsState) => void) => void
 }
 
+export interface UpdateCheckResult {
+  status: string
+  availableVersion?: string
+  message?: string
+}
+
 /** Host capabilities the menu can offer. */
 export interface Host {
   /** Wired to the window "close" IPC; without it the Quit row is hidden. */
   quit?: () => void
+  /** Version and release actions exposed by the About menu. */
+  getVersion?: () => Promise<string>
+  checkForUpdates?: () => Promise<UpdateCheckResult>
+  openChangelog?: () => void
   /**
    * Base URL for the online API (`/api/auth`, `/game` namespace). Empty or
    * undefined means same-origin (typical browser / Vite proxy setup).

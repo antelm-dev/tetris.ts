@@ -104,6 +104,7 @@ export class Menu {
   private valueArrows: { id: RowId; prev: Rect; next: Rect }[] = []
   /** Chosen on the Versus setup screen; session-only, not persisted. */
   private versusDifficulty: BotDifficulty = 'normal'
+  private version = 'Loading\u2026'
   private readonly gamepadDown = new Set<string>()
 
   constructor(private readonly handlers: MenuHandlers) {}
@@ -186,15 +187,32 @@ export class Menu {
         { id: 'solo', label: 'Solo', kind: 'action', emphasis: 'primary' },
         { id: 'versus', label: 'Versus', kind: 'action' }
       ]
-      if (this.handlers.onOnlineVersus && isOnlineMultiplayerUiEnabled()) {
-        rows.push({ id: 'online', label: 'Online Versus', kind: 'action' })
-      }
       rows.push(
         { id: 'statistics', label: 'Statistics', kind: 'action' },
-        { id: 'settings', label: 'Settings', kind: 'action' }
+        { id: 'settings', label: 'Settings', kind: 'action' },
+        { id: 'about', label: 'About', kind: 'action' }
       )
       if (this.handlers.onQuit) rows.push({ id: 'quit', label: 'Quit', kind: 'action' })
       return rows.map((row) => ({ kind: 'row', row }))
+    }
+
+    if (this.screen === 'about') {
+      const entries: Entry[] = [
+        { kind: 'heading', label: 'Release' },
+        {
+          kind: 'row',
+          row: { id: 'about:version', label: 'Current version', kind: 'display', value: this.version, disabled: true }
+        }
+      ]
+      if (this.handlers.onCheckForUpdates) {
+        entries.push({ kind: 'row', row: { id: 'about:update', label: 'Check for updates', kind: 'action' } })
+      }
+      entries.push(
+        { kind: 'row', row: { id: 'about:changelog', label: 'View changelog', kind: 'action' } },
+        { kind: 'gap', h: 8 },
+        { kind: 'row', row: { id: 'about:back', label: 'Back', kind: 'action' } }
+      )
+      return entries
     }
 
     if (this.screen === 'online') {
@@ -207,6 +225,15 @@ export class Menu {
     }
 
     if (this.screen === 'versus') {
+      const rows: Row[] = [{ id: 'local-versus', label: 'Local Versus', kind: 'action', emphasis: 'primary' }]
+      if (this.handlers.onOnlineVersus && isOnlineMultiplayerUiEnabled()) {
+        rows.push({ id: 'online', label: 'Online Versus', kind: 'action' })
+      }
+      rows.push({ id: 'versus:back', label: 'Back', kind: 'action' })
+      return rows.map((row) => ({ kind: 'row', row }))
+    }
+
+    if (this.screen === 'local-versus') {
       return [
         { kind: 'heading', label: 'Bot difficulty' },
         { kind: 'row', row: { id: 'versus:difficulty', label: 'Difficulty', kind: 'stepper' } },
@@ -496,6 +523,12 @@ export class Menu {
         this.scroll.offset = 0
         this.scroll.target = 0
         break
+      case 'local-versus':
+        this.screen = 'local-versus'
+        this.index = 0
+        this.scroll.offset = 0
+        this.scroll.target = 0
+        break
       case 'online':
         this.screen = 'online'
         this.index = 0
@@ -514,6 +547,20 @@ export class Menu {
         this.scroll.offset = 0
         this.scroll.target = 0
         break
+      case 'about':
+        this.screen = 'about'
+        this.index = 1
+        this.scroll.offset = 0
+        this.scroll.target = 0
+        if (this.handlers.getVersion) {
+          void this.handlers
+            .getVersion()
+            .then((version) => (this.version = version))
+            .catch(() => (this.version = 'Unavailable'))
+        } else {
+          this.version = 'Web build'
+        }
+        break
       case 'quit':
         this.handlers.onQuit?.()
         break
@@ -528,9 +575,26 @@ export class Menu {
         this.hide()
         this.handlers.onOnlineVersus?.()
         break
+      case 'about:update':
+        pushToast(this.toasts, 'Checking for updates\u2026')
+        void this.handlers
+          .onCheckForUpdates?.()
+          .then((state) => {
+            if (state.status === 'up-to-date') pushToast(this.toasts, 'You are up to date')
+            else if (state.status === 'available') {
+              pushToast(this.toasts, `Version ${state.availableVersion ?? 'new'} is available`)
+            } else if (state.status === 'unavailable') pushToast(this.toasts, state.message ?? 'Updates unavailable')
+            else if (state.status === 'error') pushToast(this.toasts, state.message ?? 'Update check failed')
+          })
+          .catch(() => pushToast(this.toasts, 'Update check failed'))
+        break
+      case 'about:changelog':
+        this.handlers.onOpenChangelog?.()
+        break
       case 'back':
       case 'versus:back':
       case 'online:back':
+      case 'about:back':
         this.back()
         break
     }
@@ -539,12 +603,15 @@ export class Menu {
   private back(): void {
     if (this.screen === 'main') return
     const from = this.screen
-    this.screen = 'main'
+    this.screen = from === 'local-versus' || from === 'online' ? 'versus' : 'main'
     this.resetArmedUntil = 0
     this.scroll.offset = 0
     this.scroll.target = 0
     // Land back on the row that opened this screen.
-    this.index = this.rows().findIndex((r) => r.id === from)
+    this.index = Math.max(
+      0,
+      this.rows().findIndex((r) => r.id === from)
+    )
   }
 
   // --- keyboard --------------------------------------------------------------
@@ -749,7 +816,9 @@ export class Menu {
       main: 'TETRIS.TS',
       solo: 'SOLO',
       versus: 'VERSUS',
+      'local-versus': 'LOCAL VERSUS',
       online: 'ONLINE',
+      about: 'ABOUT',
       statistics: 'STATISTICS',
       settings: 'SETTINGS'
     }
@@ -776,6 +845,15 @@ export class Menu {
       g.text('Theme, controls and comfort — saved automatically', CARD_W / 2 - 0.7, 74)
       g.pop()
     } else if (this.screen === 'versus') {
+      g.push()
+      g.noStroke()
+      g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
+      g.textAlign(g.CENTER, g.CENTER)
+      g.textSize(11)
+      setTracking(g, 1.4)
+      g.text('Choose where you want to compete', CARD_W / 2 - 0.7, 74)
+      g.pop()
+    } else if (this.screen === 'local-versus') {
       g.push()
       g.noStroke()
       g.fill(FG[0], FG[1], FG[2], 0.5 * 255 * a)
@@ -890,6 +968,18 @@ export class Menu {
     if (row.kind === 'bind' && row.bind) this.drawBindValue(g, row.bind, x + w, y, a, !!capturing)
     if (row.kind === 'stepper') this.drawStepperValue(g, row, x + w, y, a)
     if (row.kind === 'toggle') this.drawToggleValue(g, row, x + w, y, a)
+    if (row.kind === 'display' && row.value) this.drawDisplayValue(g, row.value, x + w, y, a)
+  }
+
+  private drawDisplayValue(g: P5.Graphics, value: string, right: number, y: number, a: number): void {
+    g.push()
+    g.noStroke()
+    g.fill(UI.accent[0], UI.accent[1], UI.accent[2], 235 * a)
+    g.textAlign(g.RIGHT, g.CENTER)
+    g.textSize(13)
+    setTracking(g, 0.4)
+    g.text(value, right - 4, y + ROW_H / 2)
+    g.pop()
   }
 
   private drawTag(g: P5.Graphics, text: string, right: number, cy: number, a: number): void {
@@ -1058,8 +1148,10 @@ export class Menu {
     const FOOTER_HINTS: Record<Screen, string> = {
       main: '↑↓ Navigate   ·   Enter Select',
       solo: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
-      versus: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back',
+      versus: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
+      'local-versus': '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back',
       online: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
+      about: '↑↓ Navigate   ·   Enter Select   ·   Esc Back',
       statistics: 'Mouse wheel Scroll   ·   Esc Back',
       settings: '↑↓ Navigate   ·   ←→ Adjust   ·   Enter Select   ·   Esc Back'
     }

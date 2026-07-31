@@ -4,7 +4,8 @@
     ".": {
       "release-type": "node",
       "package-name": "tetris.ts",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": ["apps/tetris/package.json"]
     }
   }
 }

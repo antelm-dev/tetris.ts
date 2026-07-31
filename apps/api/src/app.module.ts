@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from './config/config.module'
+import { LoggerModule } from './common/logger/logger.module'
 import { PubSubModule } from './common/pubsub/pubsub.module'
 import { HealthModule } from './health/health.module'
 import { AuthModule } from './auth/auth.module'
@@ -15,6 +16,16 @@ import { RealtimeModule } from './realtime/realtime.module'
  * justifies it* — not preemptively.
  */
 @Module({
-  imports: [ConfigModule, PubSubModule, HealthModule, AuthModule, UsersModule, RoomsModule, GamesModule, RealtimeModule]
+  imports: [
+    ConfigModule,
+    LoggerModule,
+    PubSubModule,
+    HealthModule,
+    AuthModule,
+    UsersModule,
+    RoomsModule,
+    GamesModule,
+    RealtimeModule
+  ]
 })
 export class AppModule {}

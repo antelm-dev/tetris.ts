@@ -1,4 +1,4 @@
-import { CanActivate, Injectable, UnauthorizedException } from '@nestjs/common'
+import { CanActivate, Injectable, Logger, UnauthorizedException } from '@nestjs/common'
 import type { ExecutionContext } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
@@ -13,6 +13,8 @@ import type { AuthenticatedUser } from '../interfaces/auth.interface'
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private readonly logger = new Logger(JwtAuthGuard.name)
+
   constructor(
     private readonly reflector: Reflector,
     private readonly tokens: TokenService
@@ -31,10 +33,16 @@ export class JwtAuthGuard implements CanActivate {
     }>()
 
     const token = this.extractBearer(request.headers.authorization)
-    if (!token) throw new UnauthorizedException('Missing bearer token')
+    if (!token) {
+      this.logger.debug('Rejected request: missing or malformed bearer token')
+      throw new UnauthorizedException('Missing bearer token')
+    }
 
     const payload = await this.tokens.verifyAccess(token)
-    if (!payload) throw new UnauthorizedException('Invalid or expired token')
+    if (!payload) {
+      this.logger.debug('Rejected request: invalid or expired access token')
+      throw new UnauthorizedException('Invalid or expired token')
+    }
 
     request.user = { id: payload.sub, email: payload.email }
     return true

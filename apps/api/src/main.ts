@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { Logger, ValidationPipe } from '@nestjs/common'
+import { ConsoleLogger, Logger, ValidationPipe } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify'
 import { AppModule } from './app.module'
@@ -12,11 +12,15 @@ import { AppConfigService } from './config/config.service'
  * CORS — is set up here so no individual controller has to remember it.
  */
 async function bootstrap(): Promise<void> {
+  // Buffer until LoggerModule's configured logger is available, so boot logs
+  // also honour LOG_LEVEL instead of using Nest's defaults.
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
-    bufferLogs: false
+    bufferLogs: true
   })
+  app.useLogger(app.get(ConsoleLogger))
 
   const config = app.get(AppConfigService)
+  const logger = new Logger('Bootstrap')
 
   // All REST routes live under /api. WebSocket namespaces are separate.
   app.setGlobalPrefix('api')
@@ -41,7 +45,11 @@ async function bootstrap(): Promise<void> {
   })
 
   await app.listen({ host: config.http.host, port: config.http.port })
-  Logger.log(`API listening on http://${config.http.host}:${config.http.port}/api`, 'Bootstrap')
+  logger.log(`API listening on http://${config.http.host}:${config.http.port}/api`)
+  logger.log(`env=${config.nodeEnv} logLevel=${config.logLevel} wsNamespace=${config.realtime.namespace}`)
 }
 
-void bootstrap()
+void bootstrap().catch((err: unknown) => {
+  new Logger('Bootstrap').error('API failed to start', err instanceof Error ? err.stack : String(err))
+  process.exitCode = 1
+})

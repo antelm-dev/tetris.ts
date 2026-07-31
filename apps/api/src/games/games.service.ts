@@ -67,6 +67,8 @@ type MatchRuntime = {
   accMs: number
   lastSnapshotAt: number
   ended: boolean
+  /** The loop-lag warning is emitted once per match, not once per late tick. */
+  lagWarned: boolean
   emit: MatchEmit
 }
 
@@ -86,6 +88,7 @@ export class GamesService implements OnModuleDestroy {
   private readonly matches = new Map<string, MatchRuntime>()
 
   onModuleDestroy(): void {
+    if (this.matches.size > 0) this.logger.log(`Shutting down — stopping ${this.matches.size} live match(es)`)
     for (const roomId of this.matches.keys()) this.endMatch(roomId)
   }
 
@@ -142,6 +145,7 @@ export class GamesService implements OnModuleDestroy {
       accMs: 0,
       lastSnapshotAt: 0,
       ended: false,
+      lagWarned: false,
       emit
     }
 
@@ -176,7 +180,7 @@ export class GamesService implements OnModuleDestroy {
     match.timer = setInterval(() => this.onTimer(match), MATCH_STEP_MS)
     // Emit an immediate first snapshot window so clients are not blank for 100 ms.
     this.emitSnapshots(match, true)
-    this.logger.log(`Started match in room ${roomId} seed=${seed}`)
+    this.logger.log(`Started match in room ${roomId} seed=${seed} players=[${userIds.join(', ')}]`)
     return { seed, startedAt }
   }
 
@@ -214,6 +218,9 @@ export class GamesService implements OnModuleDestroy {
       const onEnded = match.emit.onEnded
       this.matches.delete(roomId)
       this.sessions.delete(roomId)
+      this.logger.log(
+        `Match in room ${roomId} stopped after ${Date.now() - match.startedAt}ms (live=${this.matches.size})`
+      )
       if (notify) onEnded?.(roomId)
       return
     }
@@ -285,6 +292,9 @@ export class GamesService implements OnModuleDestroy {
       appliedAtLock
     }
     match.emit.toRoom(match.roomId, ServerEvent.GarbageDelivered, payload)
+    this.logger.verbose(
+      `Room ${match.roomId}: ${rows.length} garbage row(s) ${fromUserId} -> ${player.userId} at lock ${appliedAtLock}`
+    )
   }
 
   private resolveAttacks(match: MatchRuntime): void {
@@ -321,6 +331,7 @@ export class GamesService implements OnModuleDestroy {
       reason: 'top-out'
     }
     match.emit.toRoom(match.roomId, ServerEvent.Elimination, elimination)
+    this.logger.log(`Room ${match.roomId}: ${player.userId} topped out, place ${place}`)
 
     if (survivors.length <= 1) this.finishMatch(match)
   }
@@ -379,15 +390,26 @@ export class GamesService implements OnModuleDestroy {
       endedAt: Date.now()
     }
     match.emit.toRoom(match.roomId, ServerEvent.GameOver, payload)
+    this.logger.log(
+      `Room ${match.roomId} game over: ${standings.map((s) => `#${s.place} ${s.userId} (${s.score})`).join(', ')}`
+    )
     this.endMatch(match.roomId, true)
   }
 
   private onTimer(match: MatchRuntime): void {
     if (match.ended) return
     const now = Date.now()
-    const elapsed = Math.min(now - match.lastWallMs, MATCH_STEP_MS * MAX_STEPS_PER_TICK)
+    const behind = now - match.lastWallMs
+    const elapsed = Math.min(behind, MATCH_STEP_MS * MAX_STEPS_PER_TICK)
     match.lastWallMs = now
     match.accMs += elapsed
+
+    // Hitting the clamp means simulated time was dropped: the loop can no longer
+    // keep up and the match is silently running slow. Worth exactly one warning.
+    if (behind > elapsed && !match.lagWarned) {
+      match.lagWarned = true
+      this.logger.warn(`Room ${match.roomId}: match loop ${behind}ms behind, clamped to ${elapsed}ms — dropping time`)
+    }
 
     let steps = 0
     while (match.accMs >= MATCH_STEP_MS && steps < MAX_STEPS_PER_TICK) {

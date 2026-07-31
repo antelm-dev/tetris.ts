@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { LogLevel } from '@nestjs/common'
 
 /**
  * The full set of environment variables the API understands, validated once at
@@ -8,6 +9,9 @@ import { z } from 'zod'
  */
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+
+  /** Verbosity threshold; everything less verbose than this is also emitted. */
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'log', 'debug', 'verbose']).default('log'),
 
   API_HOST: z.string().min(1).default('0.0.0.0'),
   API_PORT: z.coerce.number().int().min(0).max(65_535).default(3000),
@@ -39,6 +43,7 @@ export type RawEnv = z.infer<typeof envSchema>
 export interface AppConfig {
   nodeEnv: RawEnv['NODE_ENV']
   isProduction: boolean
+  logLevel: LogLevel
   http: {
     host: string
     port: number
@@ -72,6 +77,7 @@ export function loadConfig(source: Record<string, unknown>): AppConfig {
   return {
     nodeEnv: env.NODE_ENV,
     isProduction: env.NODE_ENV === 'production',
+    logLevel: env.LOG_LEVEL,
     http: {
       host: env.API_HOST,
       port: env.API_PORT,

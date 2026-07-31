@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { randomUUID } from 'node:crypto'
 import { AppConfigService } from '../config/config.service'
 import type { RoomStatePayload, RoomPlayer } from '@tetris/protocol'
@@ -23,6 +23,7 @@ export interface CreateRoomInput {
  */
 @Injectable()
 export class RoomsService {
+  private readonly logger = new Logger(RoomsService.name)
   private readonly rooms = new Map<string, Room>()
 
   constructor(private readonly config: AppConfigService) {}
@@ -45,6 +46,10 @@ export class RoomsService {
     }
     this.addMember(room, input.hostUserId, input.hostDisplayName)
     this.rooms.set(room.id, room)
+    if (requested > serverMax) {
+      this.logger.warn(`Room ${room.id} requested maxPlayers=${requested}, clamped to server cap ${serverMax}`)
+    }
+    this.logger.log(`Room ${room.id} created by ${input.hostUserId} (max=${maxPlayers}, rooms=${this.rooms.size})`)
     return room
   }
 
@@ -55,6 +60,7 @@ export class RoomsService {
       throw new BadRequestException('Room is full')
     }
     this.addMember(room, userId, displayName)
+    this.logger.log(`User ${userId} joined room ${roomId} (${room.members.size}/${room.maxPlayers})`)
     return room
   }
 
@@ -62,14 +68,17 @@ export class RoomsService {
     const room = this.rooms.get(roomId)
     if (!room) return null
     room.members.delete(userId)
+    this.logger.log(`User ${userId} left room ${roomId} (${room.members.size} remaining)`)
 
     if (room.members.size === 0) {
       this.rooms.delete(roomId)
+      this.logger.log(`Room ${roomId} disposed — empty (rooms=${this.rooms.size})`)
       return null
     }
     // Hand the host role to any remaining member if the host left.
     if (room.hostUserId === userId) {
       room.hostUserId = room.members.keys().next().value as string
+      this.logger.log(`Room ${roomId} host reassigned to ${room.hostUserId}`)
     }
     return room
   }
@@ -79,6 +88,7 @@ export class RoomsService {
     const member = room.members.get(userId)
     if (!member) throw new NotFoundException('Not a member of this room')
     member.ready = ready
+    this.logger.debug(`User ${userId} ready=${ready} in room ${roomId}`)
     return room
   }
 
@@ -96,6 +106,7 @@ export class RoomsService {
     const allReady = [...room.members.values()].every((m) => m.ready)
     if (!allReady) throw new BadRequestException('All players must be ready')
     room.status = 'in-progress'
+    this.logger.log(`Room ${roomId} started by host ${requesterId} with ${room.members.size} players`)
     return room
   }
 
@@ -104,6 +115,7 @@ export class RoomsService {
     const room = this.rooms.get(roomId)
     if (!room) return null
     room.status = 'finished'
+    this.logger.log(`Room ${roomId} marked finished`)
     return room
   }
 

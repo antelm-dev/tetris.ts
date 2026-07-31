@@ -80,7 +80,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (userId && roomId) {
       this.departRoom(socket, roomId, userId)
     }
-    this.logger.debug(`Socket disconnected: ${socket.id}`)
+    this.logger.debug(`Socket disconnected: ${socket.id} user=${userId ?? 'anonymous'} room=${roomId ?? 'none'}`)
   }
 
   // --- Authentication --------------------------------------------------------
@@ -116,6 +116,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     socket.data.userId = claims.sub
     socket.data.displayName = claims.email
     this.socketsByUser.set(claims.sub, socket)
+    this.logger.log(`Socket ${socket.id} authenticated as user ${claims.sub} (live=${this.socketsByUser.size})`)
     this.send(socket, ServerEvent.Connected, { userId: claims.sub, sessionId: socket.id })
   }
 
@@ -247,6 +248,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (socket.data.roomId !== roomId) return
 
     if (this.games.hasActiveMatch(roomId)) {
+      this.logger.log(`User ${userId} left room ${roomId} mid-match — ending the match`)
       this.games.endRoom(roomId)
       this.rooms.markFinished(roomId)
     }
@@ -346,7 +348,13 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
   }
 
+  /**
+   * Every rejection in this gateway funnels through here, so this is the single
+   * place that needs to log one — no per-handler logging.
+   */
   private error(socket: TypedSocket, event: string | undefined, code: string, message: string): void {
+    const who = socket.data.userId ?? socket.id
+    this.logger.warn(`Rejected ${event ?? 'unknown event'} from ${who}: ${code} — ${message}`)
     this.send(socket, ServerEvent.Error, { event, code, message })
   }
 

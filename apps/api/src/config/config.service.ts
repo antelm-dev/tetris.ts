@@ -18,6 +18,10 @@ export class AppConfigService {
     return this.config.isProduction
   }
 
+  get logLevel(): AppConfig['logLevel'] {
+    return this.config.logLevel
+  }
+
   get http(): AppConfig['http'] {
     return this.config.http
   }

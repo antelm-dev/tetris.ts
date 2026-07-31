@@ -38,9 +38,9 @@
     "format:check": "oxfmt --check",
     "clean": "pnpm -C apps/tetris clean",
     "dist": "pnpm -C apps/tetris dist",
-    "dist:win": "pnpm -C apps/tetris dist:win",
-    "dist:mac": "pnpm -C apps/tetris dist:mac",
-    "dist:linux": "pnpm -C apps/tetris dist:linux"
+    "dist:win": "pnpm build:packages && pnpm -C apps/tetris dist:win",
+    "dist:mac": "pnpm build:packages && pnpm -C apps/tetris dist:mac",
+    "dist:linux": "pnpm build:packages && pnpm -C apps/tetris dist:linux"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",

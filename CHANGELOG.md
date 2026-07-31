@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/antelm-dev/tetris.ts/compare/tetris.ts-v1.2.0...tetris.ts-v1.2.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* build workspace packages before installers ([ab0d456](https://github.com/antelm-dev/tetris.ts/commit/ab0d456ff205c447bd04189a3bcebbffd8f80ae6))
+
 ## [1.2.0](https://github.com/antelm-dev/tetris.ts/compare/tetris.ts-v1.1.0...tetris.ts-v1.2.0) (2026-07-31)
 
 

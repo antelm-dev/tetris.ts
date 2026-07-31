@@ -5,9 +5,11 @@ import { createIpcContainer } from 'electron-ipc-module'
 import { prepare } from './core/bootstrap.js'
 import { createCustomScheme } from './core/electron.js'
 import { isAllowedExternalUrl } from './core/external-url.js'
+import { updater } from './core/updater.js'
 import { env } from './env.js'
 import { gameIpc } from './ipc/game.ipc.js'
 import { systemIpc } from './ipc/system.ipc.js'
+import { updateIpc } from './ipc/update.ipc.js'
 import { windowIpc, wireFullscreenEvents } from './ipc/window.ipc.js'
 
 const scheme = createCustomScheme(env.scheme, {
@@ -117,9 +119,16 @@ prepare({
     await ipc.loadAll({
       system: systemIpc,
       window: windowIpc,
-      game: gameIpc
+      game: gameIpc,
+      update: updateIpc
     })
   },
   protocols: env.production ? [{ scheme, handler: serveClient }] : [],
-  createWindow
+  createWindow: () => {
+    const win = createWindow()
+    // Look for an update once the window exists, so the resulting state change
+    // has somewhere to be delivered. No-ops on unsupported builds.
+    void updater.check()
+    return win
+  }
 })

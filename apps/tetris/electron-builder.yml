@@ -14,8 +14,13 @@ files:
   - '!node_modules/**/*'
 asar: true
 npmRebuild: false
+# Emit latest.yml *and* beta.yml so a beta install keeps seeing its own feed
+# (see main/core/update-channel.ts).
+generateUpdatesFilesForAllChannels: true
 publish:
   provider: github
+  owner: antelm-dev
+  repo: tetris.ts
   releaseType: release
 win:
   target:

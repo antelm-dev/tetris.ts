@@ -69,6 +69,7 @@
     "dotenv": "^16.4.7",
     "electron": "^40.8.0",
     "electron-builder": "^26.0.12",
+    "electron-ipc-module": "github:antelm-dev/electron-ipc-module#main",
     "electron-run": "github:antelm-dev/electron-run#master",
     "happy-dom": "^20.11.1",
     "oxfmt": "^0.58.0",

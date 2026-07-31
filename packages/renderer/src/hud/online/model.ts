@@ -25,6 +25,103 @@ export interface OnlineLobbyView {
   /** Match ended or connection dropped while an online scene was active. */
   terminalTitle: string | null
   terminalSub: string | null
+  /** Signed-in display name, for the lobby header. */
+  userName: string | null
+}
+
+// --- lobby card entries ------------------------------------------------------
+
+export type LobbyFieldId = 'email' | 'password' | 'regName' | 'regEmail' | 'regPassword' | 'roomName' | 'roomId'
+
+export type LobbyActionId =
+  | 'login'
+  | 'register'
+  | 'connect'
+  | 'create-room'
+  | 'join-room'
+  | 'toggle-ready'
+  | 'start'
+  | 'leave-room'
+  | 'copy-room'
+  | 'exit'
+
+export type LobbyEntry =
+  | { kind: 'heading'; label: string }
+  | { kind: 'gap'; h: number }
+  | { kind: 'note'; label: string; tone: 'error' | 'dim' }
+  | { kind: 'stat'; label: string; value: string }
+  | { kind: 'field'; id: LobbyFieldId; label: string; secret?: boolean; placeholder?: string }
+  | { kind: 'action'; id: LobbyActionId; label: string; primary?: boolean; disabled?: boolean }
+
+/**
+ * The rows the lobby card shows for a given view — pure, so the whole screen
+ * flow is testable without p5.
+ */
+export function buildLobbyEntries(v: OnlineLobbyView, opts: { busy?: boolean } = {}): LobbyEntry[] {
+  const busy = !!opts.busy
+  const out: LobbyEntry[] = []
+  if (v.errorText) out.push({ kind: 'note', label: v.errorText, tone: 'error' })
+
+  if (v.panel === 'terminal') {
+    if (v.terminalSub) out.push({ kind: 'note', label: v.terminalSub, tone: 'dim' })
+    out.push({ kind: 'action', id: 'exit', label: 'Back to menu', primary: true })
+    return out
+  }
+
+  if (v.panel === 'auth') {
+    out.push(
+      { kind: 'heading', label: 'Sign in' },
+      { kind: 'field', id: 'email', label: 'Email', placeholder: 'you@example.com' },
+      { kind: 'field', id: 'password', label: 'Password', secret: true },
+      { kind: 'action', id: 'login', label: 'Sign in', primary: true, disabled: busy },
+      { kind: 'gap', h: 8 },
+      { kind: 'heading', label: 'Register' },
+      { kind: 'field', id: 'regName', label: 'Display name' },
+      { kind: 'field', id: 'regEmail', label: 'Email', placeholder: 'you@example.com' },
+      { kind: 'field', id: 'regPassword', label: 'Password', secret: true },
+      { kind: 'action', id: 'register', label: 'Register', disabled: busy },
+      { kind: 'gap', h: 8 },
+      { kind: 'action', id: 'exit', label: 'Back to menu' }
+    )
+    return out
+  }
+
+  const offline = v.connection !== 'ready'
+  if (v.roomId) {
+    out.push({ kind: 'heading', label: 'Room' }, { kind: 'stat', label: 'Room ID', value: v.roomId })
+    out.push({ kind: 'action', id: 'copy-room', label: 'Copy room ID', disabled: busy })
+    out.push({ kind: 'gap', h: 8 }, { kind: 'heading', label: `Players · ${v.playerCount}/${v.maxPlayers}` })
+    for (const p of v.players) {
+      const who = `${p.displayName}${p.isHost ? ' · host' : ''}${p.isSelf ? ' · you' : ''}`
+      out.push({ kind: 'stat', label: who, value: p.ready ? 'Ready' : 'Not ready' })
+    }
+    out.push({ kind: 'gap', h: 8 })
+    out.push({
+      kind: 'action',
+      id: 'toggle-ready',
+      label: v.selfReady ? 'Unready' : 'Ready',
+      primary: !v.selfReady,
+      disabled: busy
+    })
+    if (v.isHost) {
+      out.push({ kind: 'action', id: 'start', label: 'Start', primary: v.canStart, disabled: busy || !v.canStart })
+    }
+    out.push({ kind: 'action', id: 'leave-room', label: 'Leave room', disabled: busy })
+  } else {
+    out.push(
+      { kind: 'heading', label: 'Create' },
+      { kind: 'field', id: 'roomName', label: 'Room name', placeholder: 'Private room' },
+      { kind: 'action', id: 'create-room', label: 'Create private room', primary: true, disabled: busy || offline },
+      { kind: 'gap', h: 8 },
+      { kind: 'heading', label: 'Join' },
+      { kind: 'field', id: 'roomId', label: 'Room ID', placeholder: 'paste a room ID' },
+      { kind: 'action', id: 'join-room', label: 'Join by ID', disabled: busy || offline }
+    )
+    if (offline) out.push({ kind: 'action', id: 'connect', label: 'Reconnect', disabled: busy })
+  }
+
+  out.push({ kind: 'gap', h: 8 }, { kind: 'action', id: 'exit', label: 'Back to menu' })
+  return out
 }
 
 export function authPanelFromClient(state: OnlineClientState): boolean {
@@ -100,7 +197,8 @@ export function buildOnlineLobbyView(
     maxPlayers: room?.maxPlayers ?? 2,
     players,
     terminalTitle,
-    terminalSub
+    terminalSub,
+    userName: state.user?.displayName ?? null
   }
 }
 

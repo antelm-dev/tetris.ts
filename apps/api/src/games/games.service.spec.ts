@@ -165,6 +165,30 @@ describe('GamesService match loop', () => {
     vi.useRealTimers()
   })
 
+  it('keeps a top-out provisional when an unrelated input arrives inside the rollback window', () => {
+    vi.useFakeTimers()
+    games = new GamesService()
+    const events: Array<{ event: string; data: unknown }> = []
+
+    games.startMatch('room-provisional', ['a', 'b'], 13, {
+      toUser: (_u, event, data) => events.push({ event, data }),
+      toRoom: (_r, event, data) => events.push({ event, data })
+    })
+
+    games.gameFor('room-provisional', 'a')!.receiveGarbage(25)
+    games.stepTicks('room-provisional', 1)
+    expect(events.filter((event) => event.event === ServerEvent.Elimination)).toHaveLength(0)
+
+    // Player b's ordinary input must not make player a's still-rewindable
+    // top-out final before the rollback horizon reaches it.
+    expect(games.applyAction('room-provisional', 'b', 'left', 0, 1)).toBe(true)
+    expect(events.filter((event) => event.event === ServerEvent.Elimination)).toHaveLength(0)
+    expect(games.hasActiveMatch('room-provisional')).toBe(true)
+
+    games.endRoom('room-provisional')
+    vi.useRealTimers()
+  })
+
   it('emits one elimination and one game-over, then clears the timer', () => {
     vi.useFakeTimers()
     games = new GamesService()

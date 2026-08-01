@@ -324,7 +324,10 @@ describe('OnlineClient', () => {
       original(rows)
     }
 
-    socket.push(ServerEvent.GarbageDelivered, nextEnvelope(delivery({ rows: [{ hole: 3 }, { hole: 4 }], applyAtTick: 2 })))
+    socket.push(
+      ServerEvent.GarbageDelivered,
+      nextEnvelope(delivery({ rows: [{ hole: 3 }, { hole: 4 }], applyAtTick: 2 }))
+    )
 
     // Tick 2 arrives, but no piece has locked — rows must not shove an active
     // piece into the stack.
@@ -392,6 +395,44 @@ describe('OnlineClient', () => {
     expect(game.score).toBe(4242)
     // Replayed forward to where we were, not left stranded at the corrected tick.
     expect(client.match?.tick).toBe(10)
+  })
+
+  it('adopts corrections that differ only in hidden future-affecting engine state', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 5 })))
+    for (let tick = 1; tick <= 10; tick++) client.pump(TICK * tick)
+
+    const game = client.localGame!
+    const authoritative = game.serialize()
+    authoritative.lastActionRotate = !authoritative.lastActionRotate
+
+    socket.push(
+      ServerEvent.StateCorrection,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        userId: 'user-1',
+        tick: client.match!.tick,
+        state: authoritative,
+        reason: 'baseline'
+      })
+    )
+
+    expect(game.serialize().lastActionRotate).toBe(authoritative.lastActionRotate)
+  })
+
+  it('uses pong serverTick to avoid running far ahead after the server drops stalled time', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 17 })))
+
+    // A valid lagged-server sample: wall time advanced by 100 ticks, but the
+    // authoritative loop dropped the stall and has only simulated tick 0.
+    now = TICK * 100
+    socket.push(ServerEvent.Pong, nextEnvelope({ clientTime: now, serverTime: now, serverTick: 0 }))
+
+    for (let frame = 0; frame < 20; frame++) client.pump(now)
+
+    expect(client.match?.tick).toBeLessThanOrEqual(1)
   })
 
   it('keeps a wireLocalEvents onLock composed with the client bookkeeping', async () => {

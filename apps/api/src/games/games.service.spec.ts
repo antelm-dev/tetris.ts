@@ -242,11 +242,11 @@ describe('GamesService match loop', () => {
     // Tick 1 is long since final — it cannot be rewound to at any price.
     expect(games.applyAction('room-x', 'a', 'left', 0, 1)).toBe(true)
 
-    const ack = toUser.filter((e) => e.event === ServerEvent.ActionAcknowledged).at(-1)?.data as ActionAckPayload
+    const ack = toUser.findLast((e) => e.event === ServerEvent.ActionAcknowledged)?.data as ActionAckPayload
     expect(ack.clamped).toBe(true)
     expect(ack.appliedTick).toBeGreaterThan(1)
 
-    const correction = toUser.filter((e) => e.event === ServerEvent.StateCorrection).at(-1)?.data as {
+    const correction = toUser.findLast((e) => e.event === ServerEvent.StateCorrection)?.data as {
       reason: string
       tick: number
     }
@@ -254,6 +254,59 @@ describe('GamesService match loop', () => {
     expect(correction.tick).toBeGreaterThanOrEqual(0)
 
     games.endRoom('room-x')
+  })
+
+  /**
+   * The regression this whole design exists for.
+   *
+   * Two players sent identical inputs stamped for identical ticks; only the
+   * network differed. The old loop applied inputs on arrival, so latency and
+   * jitter changed *when* each action hit the simulation — the server's copy of
+   * a player drifted from that player's own screen within a second, and the two
+   * boards were unrecognizable within a minute.
+   *
+   * The outcome must now depend only on the inputs and their ticks, never on
+   * how the packets happened to be delivered.
+   */
+  it('produces a network-independent result for the same tick-stamped inputs', () => {
+    const script: Array<{ tick: number; action: 'left' | 'right' | 'rotate-right' | 'down' | 'push' }> = []
+    const pattern = ['left', 'rotate-right', 'right', 'down', 'push'] as const
+    for (let i = 0; i < 120; i++) script.push({ tick: 2 + i * 5, action: pattern[i % pattern.length] })
+
+    const noop = { toUser: () => undefined, toRoom: () => undefined }
+    const TOTAL_TICKS = 700
+
+    /** Deliver every input `lateBy` ticks after the tick it was stamped for. */
+    const play = (room: string, lateBy: (index: number) => number) => {
+      games.startMatch(room, ['a', 'b'], 4242, noop)
+      const inbox = script.map((entry, index) => ({
+        tick: entry.tick,
+        action: entry.action,
+        arriveAt: entry.tick + lateBy(index)
+      }))
+      let next = 0
+      for (let tick = 0; tick <= TOTAL_TICKS; tick++) {
+        games.stepTicks(room, 1)
+        while (next < inbox.length && inbox[next].arriveAt <= tick) {
+          const entry = inbox[next]
+          games.applyAction(room, 'a', entry.action, next, entry.tick)
+          next++
+        }
+      }
+      const state = games.gameFor(room, 'a')!.serialize()
+      games.endRoom(room)
+      return state
+    }
+
+    games = new GamesService()
+    // A perfect connection: every input lands on the tick it was stamped for.
+    const perfect = play('room-perfect', () => 0)
+    // A realistic one: a few ticks of latency, jittering inside the window.
+    const laggy = play('room-laggy', (i) => 1 + (i % (ROLLBACK_WINDOW_TICKS - 2)))
+
+    expect(laggy).toEqual(perfect)
+    // Guard against the assertion passing because nothing actually happened.
+    expect(perfect.board.flat().filter((cell) => cell !== 0).length).toBeGreaterThan(0)
   })
 
   it('seeds both players from the published shared seed', () => {

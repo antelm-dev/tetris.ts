@@ -436,7 +436,7 @@ export class GamesService implements OnModuleDestroy {
     }
 
     player.game.restore(prior.state)
-    player.pending = prior.pending.map((row) => ({ ...row }))
+    player.pending = [...prior.pending]
     for (let tick = fromTick; tick <= match.tick; tick++) {
       player.attacks.delete(tick)
       this.stepPlayer(player, tick)
@@ -472,7 +472,7 @@ export class GamesService implements OnModuleDestroy {
       player.attacks.set(tick, 0)
       player.history.set(tick, {
         state: player.game.serialize(),
-        pending: player.pending.map((row) => ({ ...row }))
+        pending: [...player.pending]
       })
       return
     }
@@ -497,7 +497,7 @@ export class GamesService implements OnModuleDestroy {
 
     player.history.set(tick, {
       state: player.game.serialize(),
-      pending: player.pending.map((row) => ({ ...row }))
+      pending: [...player.pending]
     })
   }
 

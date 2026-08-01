@@ -299,16 +299,18 @@ export default class Game {
   }
 
   /**
-   * Run `steps` with every {@link GameEvents} hook detached.
+   * Run `steps` with the live {@link GameEvents} swapped out for `during`
+   * (nothing at all, by default).
    *
    * Re-simulating ticks that already happened would otherwise re-fire their
    * locks, clears and level-ups — duplicate sound effects and a particle storm
-   * on every correction. The engine still mutates normally; only the
-   * presentation callbacks are suppressed.
+   * on every correction. The engine still mutates normally; only the callbacks
+   * change. Pass `during` to keep hooks a caller needs for its *own*
+   * bookkeeping (rather than for presentation) alive across the replay.
    */
-  public replay(steps: () => void): void {
+  public replay(steps: () => void, during: GameEvents = {}): void {
     const live = this.events
-    this.events = {}
+    this.events = during
     try {
       steps()
     } finally {

@@ -41,6 +41,51 @@ export type GarbageRow = {
 }
 
 /**
+ * The complete simulation state of a `Game` — everything that affects what
+ * happens *next*, and nothing that doesn't.
+ *
+ * Unlike {@link GameProjection} (a display view, safe to hand an opponent) this
+ * is the full private state: the bag, the hold slot, the lock timers and the
+ * RNG position. Rollback netcode restores one of these and re-simulates, so an
+ * omitted field is not a cosmetic bug — it is a desync.
+ *
+ * `mode` is deliberately absent: it is a run configuration chosen before the
+ * game starts, not something a replay may change.
+ */
+export type GameState = {
+  score: number
+  streak: number
+  b2b: number
+  lines: number
+  level: number
+  elapsedMs: number
+  /** Sub-cell gravity credit; dropping it re-phases every future piece fall. */
+  gravityAccMs: number
+  lockTimer: number
+  lockResets: number
+  /** `-Infinity` until the active piece has descended — JSON-encoded as `null`. */
+  lowestRow: number | null
+  lastActionRotate: boolean
+  lastRotateKicked: boolean
+  canHold: boolean
+  gameOver: boolean
+  completed: boolean
+  paused: boolean
+  board: Slot[][]
+  activePiece?: ActivePieceProjection
+  holdPiece?: PieceName
+  /** Preview queue, consumed from the end — see `Game.addNextPiece`. */
+  nextPieces: PieceName[]
+  /** Names still undrawn in the current 7-bag. */
+  bag: PieceName[]
+  /**
+   * Position of the piece-bag RNG stream, or `null` for an unrewindable source
+   * such as `Math.random`. See `isStatefulRandom`.
+   */
+  rng: number | null
+}
+
+/**
  * Optional, fire-and-forget callbacks the renderer can attach to a `Game` to
  * drive visual/audio "juice" (particles, screen-shake, flashes). The engine
  * itself never depends on these — every hook is optional and defaults to a

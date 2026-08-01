@@ -144,6 +144,15 @@ export default class Field {
     this._slots = this._slots.map((row) => row.map((): Slot => 0))
   }
 
+  /**
+   * Overwrite the well with `slots`, copying every row so the caller keeps no
+   * live handle into the field. Used by state restore (rollback / resync).
+   */
+  public load(slots: readonly (readonly Slot[])[]): void {
+    this._slots = slots.map((row) => [...row])
+    this.lastCleared = []
+  }
+
   /** An independent deep copy — mutating the clone never touches this field, or vice versa. */
   public clone(): Field {
     const field = new Field({ width: this._slots[0].length, height: this._slots.length })

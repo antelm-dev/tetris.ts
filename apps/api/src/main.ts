@@ -2,6 +2,7 @@ import 'reflect-metadata'
 import { ConsoleLogger, Logger, ValidationPipe } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify'
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import { AppModule } from './app.module'
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter'
 import { AppConfigService } from './config/config.service'
@@ -44,8 +45,26 @@ async function bootstrap(): Promise<void> {
     credentials: true
   })
 
+  // OpenAPI docs at /api/docs (JSON at /api/docs-json). Routes are described by
+  // the @Api* decorators on the controllers and DTOs.
+  SwaggerModule.setup(
+    'api/docs',
+    app,
+    SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle('Tetris API')
+        .setDescription('REST surface of the Tetris modular monolith. Realtime play runs over the WebSocket namespace and is not covered here.')
+        .setVersion('1.0')
+        .addBearerAuth()
+        .build()
+    ),
+    { swaggerOptions: { persistAuthorization: true } }
+  )
+
   await app.listen({ host: config.http.host, port: config.http.port })
   logger.log(`API listening on http://${config.http.host}:${config.http.port}/api`)
+  logger.log(`API docs on http://${config.http.host}:${config.http.port}/api/docs`)
   logger.log(`env=${config.nodeEnv} logLevel=${config.logLevel} wsNamespace=${config.realtime.namespace}`)
 }
 

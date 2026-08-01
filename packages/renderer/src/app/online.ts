@@ -615,6 +615,10 @@ export class OnlineClient {
         sessionId: env.data.sessionId,
         lastError: null
       })
+      // Start syncing clocks now rather than at match start, so the first
+      // inputs of a match are already stamped against a converged estimate
+      // instead of being clamped while the first probes land.
+      this.startClockSync()
       this.resolveConnectWaiters()
     })
 
@@ -987,7 +991,12 @@ export class OnlineClient {
     if (mine && statesAgree(mine.state, payload.state as unknown as GameState)) return
 
     const authoritative = payload.state as unknown as GameState
-    this.history.set(payload.tick, { state: authoritative, pending: this.clonePending() })
+    // The correction carries engine state only. The pending garbage queue for
+    // that tick is our own predicted one — both sides schedule deliveries on the
+    // same ticks under the same lock rule, so it is the right queue for that
+    // moment. Using the *current* queue here would replay rows that had not been
+    // received yet at the corrected tick.
+    this.history.set(payload.tick, { state: authoritative, pending: mine ? [...mine.pending] : [] })
 
     if (payload.tick >= match.tick) {
       // The server is ahead of us — adopt its state wholesale and resume there.

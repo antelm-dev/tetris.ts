@@ -16,7 +16,8 @@ import {
   type GameEvents,
   type GameProjection,
   type GameState,
-  type GarbageRow
+  type GarbageRow,
+  type Slot
 } from '@tetris/engine'
 import {
   ClientEvent,
@@ -197,35 +198,55 @@ const CLOCK_SYNC_INTERVAL_MS = 2000
 /**
  * Whether two states agree on everything that affects the simulation.
  *
- * Compared field by field rather than by JSON string: key order is not
- * guaranteed across a wire round trip, and a false mismatch would trigger a
+ * Enumerates the *union of both objects' own keys* rather than a hand-written
+ * field list. Every field of `GameState` exists because it changes what happens
+ * next, so any field this comparison skips is a real divergence the correction
+ * channel would silently discard — and a hand-written list quietly stops
+ * covering a field the moment someone adds one. Hidden state (`lowestRow`, the
+ * spin flags, `gravityAccMs`) is exactly the kind that reads as equal on screen
+ * and diverges at the next lock.
+ *
+ * Compared structurally rather than via `JSON.stringify` because key order is
+ * not guaranteed across a wire round trip, and a false mismatch would trigger a
  * pointless (and visible) replay on every correction.
  */
-function statesAgree(a: GameState, b: GameState): boolean {
-  if (
-    a.score !== b.score ||
-    a.lines !== b.lines ||
-    a.level !== b.level ||
-    a.streak !== b.streak ||
-    a.b2b !== b.b2b ||
-    a.gravityAccMs !== b.gravityAccMs ||
-    a.lockTimer !== b.lockTimer ||
-    a.lockResets !== b.lockResets ||
-    a.canHold !== b.canHold ||
-    a.gameOver !== b.gameOver ||
-    a.holdPiece !== b.holdPiece ||
-    a.rng !== b.rng
-  ) {
-    return false
+export function statesAgree(a: GameState, b: GameState): boolean {
+  const keys = new Set<string>([...Object.keys(a), ...Object.keys(b)])
+  for (const key of keys) {
+    const left = (a as unknown as Record<string, unknown>)[key]
+    const right = (b as unknown as Record<string, unknown>)[key]
+    if (key === 'board') {
+      if (!gridsAgree(left as Slot[][], right as Slot[][])) return false
+      continue
+    }
+    if (Array.isArray(left) || Array.isArray(right)) {
+      if (!listsAgree(left, right)) return false
+      continue
+    }
+    if (left !== null && right !== null && typeof left === 'object' && typeof right === 'object') {
+      // Nested records (`activePiece`) — one level is all `GameState` has.
+      if (!statesAgree(left as GameState, right as GameState)) return false
+      continue
+    }
+    if (left !== right) return false
   }
-  if (a.activePiece?.name !== b.activePiece?.name) return false
-  if (a.activePiece?.x !== b.activePiece?.x) return false
-  if (a.activePiece?.y !== b.activePiece?.y) return false
-  if (a.activePiece?.orientation !== b.activePiece?.orientation) return false
-  if (a.bag.length !== b.bag.length || a.bag.some((name, i) => name !== b.bag[i])) return false
-  if (a.nextPieces.length !== b.nextPieces.length) return false
-  if (a.nextPieces.some((name, i) => name !== b.nextPieces[i])) return false
-  return a.board.every((row, y) => row.every((cell, x) => cell === b.board[y]?.[x]))
+  return true
+}
+
+/** Row-for-row, cell-for-cell — including differing heights or row widths. */
+function gridsAgree(a: Slot[][] | undefined, b: Slot[][] | undefined): boolean {
+  if (!a || !b) return a === b
+  if (a.length !== b.length) return false
+  return a.every((row, y) => {
+    const other = b[y]
+    return !!other && row.length === other.length && row.every((cell, x) => cell === other[x])
+  })
+}
+
+function listsAgree(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
+  if (a.length !== b.length) return false
+  return a.every((value, i) => value === b[i])
 }
 
 const EMPTY_STATE = (): OnlineClientState => ({
@@ -299,6 +320,11 @@ export class OnlineClient {
   private replaying = false
   /** Add to a local timestamp to get server time. See {@link applyPong}. */
   private clockOffsetMs = 0
+  /**
+   * Last authoritative tick reading and when it was taken locally — the anchor
+   * local pacing extrapolates from. Null until the first pong of a match.
+   */
+  private anchor: { serverTick: number; atLocalMs: number } | null = null
   /** Lowest round trip seen; the sample the offset is derived from. */
   private bestRtt = Number.POSITIVE_INFINITY
   private pingTimer: ReturnType<typeof setInterval> | null = null
@@ -508,13 +534,32 @@ export class OnlineClient {
     const match = this.state.match
     if (!match?.localGame || this.state.lobby !== 'in-match' || match.gameOver) return
 
-    const target = tickAt(nowMs + this.clockOffsetMs, match.startedAt)
+    const target = this.targetTick(match, nowMs)
     let steps = 0
     while (match.tick < target && steps < MAX_CATCHUP_TICKS) {
       this.stepTick(match.tick + 1)
       steps++
     }
     if (steps > 0) this.notify()
+  }
+
+  /**
+   * The tick the server is expected to be on right now.
+   *
+   * Paced against the server's *reported* tick, not wall clock. The two are not
+   * interchangeable: the authoritative loop clamps catch-up and deliberately
+   * drops simulated time when it falls behind, so after any stall its tick sits
+   * permanently below what elapsed wall time implies. Pacing on wall time alone
+   * lets the client run away — stamping inputs for ticks the server reaches much
+   * later, or never — and no correction repairs that, because the anchor itself
+   * is what is wrong.
+   *
+   * Falls back to wall clock only until the first pong establishes an anchor.
+   */
+  private targetTick(match: OnlineMatchState, nowMs: number): number {
+    if (!this.anchor) return tickAt(nowMs + this.clockOffsetMs, match.startedAt)
+    const elapsed = Math.max(0, nowMs - this.anchor.atLocalMs)
+    return this.anchor.serverTick + Math.floor(elapsed / match.tickMs)
   }
 
   /**
@@ -917,6 +962,20 @@ export class OnlineClient {
     const now = this.now()
     const rtt = now - pong.clientTime
     if (rtt < 0) return
+
+    // The authoritative tick anchor is re-taken on every valid sample, not only
+    // on the best one: it tracks a moving quantity (where the server's loop
+    // actually got to), and a stale anchor is precisely the failure being
+    // avoided. The wall-clock offset below is a static property of the two
+    // clocks, so that one does keep its best estimate.
+    const match = this.state.match
+    if (pong.serverTick !== null && match) {
+      // The tick was sampled one return leg ago, so the server has advanced by
+      // roughly half a round trip since.
+      const inFlightTicks = Math.round(rtt / 2 / match.tickMs)
+      this.anchor = { serverTick: pong.serverTick + inFlightTicks, atLocalMs: now }
+    }
+
     if (rtt >= this.bestRtt) return
     this.bestRtt = rtt
     // Server time at the moment we receive this ≈ its send time plus the
@@ -991,24 +1050,30 @@ export class OnlineClient {
     if (mine && statesAgree(mine.state, payload.state as unknown as GameState)) return
 
     const authoritative = payload.state as unknown as GameState
-    // The correction carries engine state only. The pending garbage queue for
-    // that tick is our own predicted one — both sides schedule deliveries on the
-    // same ticks under the same lock rule, so it is the right queue for that
-    // moment. Using the *current* queue here would replay rows that had not been
-    // received yet at the corrected tick.
-    this.history.set(payload.tick, { state: authoritative, pending: mine ? [...mine.pending] : [] })
+    // The queue of garbage owed but not yet inserted comes from the server too.
+    // It cannot be read off the board — that shows rows already applied, never
+    // rows still waiting for a lock — so a client that guessed it would drop
+    // rows it had been sent, and diverge again at the very next lock.
+    //
+    // A payload without the field is wire data from an older peer, not a
+    // statement that nothing is pending: fall back to the local prediction for
+    // that tick. Clearing the queue here is the one thing that must not happen.
+    const authoritativePending = payload.pending
+      ? payload.pending.map((row) => ({ hole: row.hole }))
+      : [...(mine?.pending ?? this.pendingGarbage)]
+    this.history.set(payload.tick, { state: authoritative, pending: authoritativePending })
 
     if (payload.tick >= match.tick) {
       // The server is ahead of us — adopt its state wholesale and resume there.
       game.restore(authoritative)
       match.tick = payload.tick
-      this.pendingGarbage = []
+      this.pendingGarbage = [...authoritativePending]
     } else if (!this.rollbackTo(payload.tick + 1)) {
       // Too old to replay from; take the state as-is rather than keep a board
       // we already know is wrong.
       game.restore(authoritative)
       match.tick = payload.tick
-      this.pendingGarbage = []
+      this.pendingGarbage = [...authoritativePending]
     }
     this.notify()
   }
@@ -1021,6 +1086,7 @@ export class OnlineClient {
     this.history.clear()
     this.bestRtt = Number.POSITIVE_INFINITY
     this.clockOffsetMs = 0
+    this.anchor = null
     if (this.state.match?.localGame) {
       this.state.match.localGame.events = {}
     }

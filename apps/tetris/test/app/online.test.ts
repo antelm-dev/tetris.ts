@@ -435,6 +435,45 @@ describe('OnlineClient', () => {
     expect(client.match?.tick).toBeLessThanOrEqual(1)
   })
 
+  it('keeps garbage that is due but waiting for a lock across a correction', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 23 })))
+
+    // Rows come due at tick 2 but no piece has locked, so they sit in the queue
+    // — invisible on the board, and unreconstructable from engine state alone.
+    socket.push(ServerEvent.GarbageDelivered, nextEnvelope(delivery({ rows: [{ hole: 8 }], applyAtTick: 2 })))
+    for (let tick = 1; tick <= 5; tick++) client.pump(TICK * tick)
+
+    const game = client.localGame!
+    const received: unknown[] = []
+    const original = game.receiveGarbage.bind(game)
+    game.receiveGarbage = (rows) => {
+      received.push(rows)
+      original(rows)
+    }
+
+    // A correction arrives carrying the server's own view of that queue.
+    const authoritative = game.serialize()
+    authoritative.score += 10
+    socket.push(
+      ServerEvent.StateCorrection,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        userId: 'user-1',
+        tick: 4,
+        state: authoritative,
+        pending: [{ hole: 8 }],
+        reason: 'baseline'
+      })
+    )
+
+    // The rows must still land at the next lock rather than vanish.
+    client.sendAction('push')
+    client.pump(TICK * 7)
+    expect(received).toEqual([[{ hole: 8 }]])
+  })
+
   it('keeps a wireLocalEvents onLock composed with the client bookkeeping', async () => {
     await client.connect()
     socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 9 })))

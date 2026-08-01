@@ -23,6 +23,18 @@ export const sequenceSchema = z.number().int().nonnegative()
 export const clientTimestampSchema = z.number().int().nonnegative()
 
 /**
+ * A match tick index — the shared simulation clock, counted from match start at
+ * a fixed step (see `TICK_MS`).
+ *
+ * This is the one number that makes client prediction and server authority
+ * agree: an input is not "an action that happened at some wall-clock time", it
+ * is "this action, on this tick". Both sides run the same deterministic engine
+ * over the same tick sequence, so honoring the stamp makes their simulations
+ * identical by construction rather than by luck.
+ */
+export const tickSchema = z.number().int().nonnegative()
+
+/**
  * Gameplay inputs. Intentionally mirrors `@tetris/engine`'s `Action` union so
  * the authoritative session can forward them straight into the shared engine,
  * but is declared here independently to avoid coupling the protocol to the
@@ -78,11 +90,23 @@ export const playerActionPayloadSchema = z.object({
   roomId: roomIdSchema,
   /** Per-connection input sequence number — see {@link sequenceSchema}. */
   seq: sequenceSchema,
+  /**
+   * The match tick this input belongs to — see {@link tickSchema}. The server
+   * honors it (rewinding if it has already simulated past it) rather than using
+   * arrival time, which is what keeps prediction and authority in step.
+   */
+  applyTick: tickSchema,
   /** Client-side timestamp for lag estimation; never trusted for authority. */
   ts: clientTimestampSchema,
   action: gameActionSchema
 })
 export type PlayerActionPayload = z.infer<typeof playerActionPayloadSchema>
+
+export const pingPayloadSchema = z.object({
+  /** Echoed back untouched so the client can measure the round trip. */
+  clientTime: clientTimestampSchema
+})
+export type PingPayload = z.infer<typeof pingPayloadSchema>
 
 /** Registry mapping each inbound event to its schema, for a generic validating dispatcher. */
 export const inboundSchemas = {
@@ -92,5 +116,6 @@ export const inboundSchemas = {
   roomLeave: roomLeavePayloadSchema,
   playerReady: playerReadyPayloadSchema,
   gameStart: gameStartPayloadSchema,
-  playerAction: playerActionPayloadSchema
+  playerAction: playerActionPayloadSchema,
+  ping: pingPayloadSchema
 } as const

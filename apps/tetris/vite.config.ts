@@ -1,8 +1,20 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { cspConnectSrc } from './csp-connect-src'
 
 const packageRoot = path.dirname(fileURLToPath(import.meta.url))
+
+/** Replaces `__CSP_CONNECT_SRC__` in renderer HTML from `VITE_API_ORIGIN`. */
+function injectCspConnectSrc(apiOrigin: string | undefined): Plugin {
+  const connectSrc = cspConnectSrc(apiOrigin)
+  return {
+    name: 'inject-csp-connect-src',
+    transformIndexHtml(html) {
+      return html.replaceAll('__CSP_CONNECT_SRC__', connectSrc)
+    }
+  }
+}
 
 /**
  * Renderer-only Vite config, shared by both build targets. The Electron
@@ -29,6 +41,7 @@ export default defineConfig(({ mode }) => {
     root: 'renderer',
     envDir: packageRoot,
     base: env.VITE_BASE || '/',
+    plugins: [injectCspConnectSrc(env.VITE_API_ORIGIN)],
     // Static assets (sounds) live with the shared game UI in @tetris/renderer,
     // not in this app shell, so both the desktop and (future) web app serve the
     // same files from one source of truth.
@@ -51,3 +64,4 @@ export default defineConfig(({ mode }) => {
     }
   }
 })
+

@@ -28,4 +28,5 @@ apps/tetris/server/data
 electron-run-*.json
 
 *.log
-.env
+.env*
+!*.example

@@ -141,7 +141,7 @@ describe('Realtime match (e2e)', () => {
     expect(snapshot.data.userId).toBeTruthy()
 
     const ack = waitForEvent(a, ServerEvent.ActionAcknowledged)
-    a.emit(ClientEvent.PlayerAction, { roomId, seq: 1, ts: Date.now(), action: 'left' })
+    a.emit(ClientEvent.PlayerAction, { roomId, seq: 1, applyTick: 0, ts: Date.now(), action: 'left' })
     const ackPayload = await ack
     expect((ackPayload.data as { seq: number }).seq).toBe(1)
 
@@ -150,12 +150,12 @@ describe('Realtime match (e2e)', () => {
     a.once(ServerEvent.ActionAcknowledged, () => {
       duplicateAck = true
     })
-    a.emit(ClientEvent.PlayerAction, { roomId, seq: 1, ts: Date.now(), action: 'right' })
+    a.emit(ClientEvent.PlayerAction, { roomId, seq: 1, applyTick: 0, ts: Date.now(), action: 'right' })
     await new Promise((r) => setTimeout(r, 50))
     expect(duplicateAck).toBe(false)
 
     // Wrong-room action ignored.
-    b.emit(ClientEvent.PlayerAction, { roomId: 'nope', seq: 1, ts: Date.now(), action: 'left' })
+    b.emit(ClientEvent.PlayerAction, { roomId: 'nope', seq: 1, applyTick: 0, ts: Date.now(), action: 'left' })
     await new Promise((r) => setTimeout(r, 50))
 
     expect(games.hasActiveMatch(roomId)).toBe(true)
@@ -211,13 +211,13 @@ describe('Realtime match (e2e)', () => {
       a.once(ServerEvent.ActionAcknowledged, () => {
         acknowledged = true
       })
-      a.emit(ClientEvent.PlayerAction, { roomId: roomTwo, seq: 1, ts: Date.now(), action: 'left' })
+      a.emit(ClientEvent.PlayerAction, { roomId: roomTwo, seq: 1, applyTick: 0, ts: Date.now(), action: 'left' })
       await new Promise((resolve) => setTimeout(resolve, 100))
       expect(acknowledged).toBe(false)
 
       // Control stays with the current room only.
       const ack = waitForEvent(a, ServerEvent.ActionAcknowledged)
-      a.emit(ClientEvent.PlayerAction, { roomId: roomOne, seq: 1, ts: Date.now(), action: 'left' })
+      a.emit(ClientEvent.PlayerAction, { roomId: roomOne, seq: 1, applyTick: 0, ts: Date.now(), action: 'left' })
       await ack
     } finally {
       a.close()

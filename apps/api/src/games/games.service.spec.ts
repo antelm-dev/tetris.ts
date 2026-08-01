@@ -2,7 +2,7 @@ import { Game } from '@tetris/engine'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EngineGameSession } from './engine-game-session'
 import { GamesService, MATCH_STEP_MS, SNAPSHOT_INTERVAL_MS } from './games.service'
-import { ServerEvent } from '@tetris/protocol'
+import { GARBAGE_DELAY_TICKS, ROLLBACK_WINDOW_TICKS, ServerEvent, type ActionAckPayload } from '@tetris/protocol'
 
 function seededGame(seed = 1): Game {
   let n = seed
@@ -80,11 +80,11 @@ describe('GamesService match loop', () => {
     const snapshotsAtStart = events.filter((e) => e.event === ServerEvent.Snapshot).length
     expect(snapshotsAtStart).toBeGreaterThanOrEqual(2)
 
-    expect(games.applyAction('room-1', 'u1', 'left', 1)).toBe(true)
+    expect(games.applyAction('room-1', 'u1', 'left', 1, 0)).toBe(true)
     expect(events.some((e) => e.event === ServerEvent.ActionAcknowledged && e.userId === 'u1')).toBe(true)
 
-    expect(games.applyAction('room-1', 'u1', 'left', 1)).toBe(false)
-    expect(games.applyAction('room-1', 'u3', 'left', 1)).toBe(false)
+    expect(games.applyAction('room-1', 'u1', 'left', 1, 0)).toBe(false)
+    expect(games.applyAction('room-1', 'u3', 'left', 1, 0)).toBe(false)
 
     const before = events.filter((e) => e.event === ServerEvent.Snapshot).length
     vi.advanceTimersByTime(SNAPSHOT_INTERVAL_MS + MATCH_STEP_MS)
@@ -104,7 +104,7 @@ describe('GamesService match loop', () => {
     vi.useRealTimers()
   })
 
-  it('nets simultaneous attacks and delivers explicit-hole garbage on the next lock', () => {
+  it('nets simultaneous attacks and schedules explicit-hole garbage on a future tick', () => {
     vi.useFakeTimers()
     games = new GamesService()
     const events: Array<{ event: string; data: unknown }> = []
@@ -114,34 +114,54 @@ describe('GamesService match loop', () => {
       toRoom: (_r, event, data) => events.push({ event, data })
     })
 
-    const attacker = games.gameFor('room-g', 'a')!
-    const defender = games.gameFor('room-g', 'b')!
-
-    attacker.events.onLock?.(false)
-    attacker.events.onClear?.([19], 2, 1)
-    defender.events.onLock?.(false)
-    defender.events.onClear?.([19], 2, 1)
+    games.stepTicks('room-g', 1)
+    // Equal attacks on the same tick cancel — neither side owes the other.
+    games.creditAttack('room-g', 'a', 1)
+    games.creditAttack('room-g', 'b', 1)
     games.flushAttacks('room-g')
     expect(games.pendingGarbageFor('room-g', 'a')).toHaveLength(0)
     expect(games.pendingGarbageFor('room-g', 'b')).toHaveLength(0)
 
-    attacker.events.onLock?.(false)
-    attacker.events.onClear?.([16, 17, 18, 19], 4, 1)
+    games.stepTicks('room-g', 1)
+    games.creditAttack('room-g', 'a', 4)
     games.flushAttacks('room-g')
     const pending = games.pendingGarbageFor('room-g', 'b')
     expect(pending).toHaveLength(4)
     expect(pending.every((row) => typeof row.hole === 'number')).toBe(true)
 
-    defender.events.onLock?.(false)
     const garbageEvents = events.filter((e) => e.event === ServerEvent.GarbageDelivered)
     expect(garbageEvents).toHaveLength(1)
-    const payload = garbageEvents[0].data as { rows: unknown[]; appliedAtLock: number; toUserId: string }
+    const payload = garbageEvents[0].data as { rows: unknown[]; applyAtTick: number; toUserId: string }
     expect(payload.toUserId).toBe('b')
     expect(payload.rows).toHaveLength(4)
-    expect(payload.appliedAtLock).toBeGreaterThan(0)
-    expect(games.pendingGarbageFor('room-g', 'b')).toHaveLength(0)
+    // Scheduled ahead of the live tick so the recipient can receive it in time.
+    expect(payload.applyAtTick).toBeGreaterThan(GARBAGE_DELAY_TICKS - 1)
 
     games.endRoom('room-g')
+    vi.useRealTimers()
+  })
+
+  it('holds cross-player effects until the tick is past the rollback window', () => {
+    vi.useFakeTimers()
+    games = new GamesService()
+    const events: Array<{ event: string; data: unknown }> = []
+
+    games.startMatch('room-c', ['a', 'b'], 3, {
+      toUser: (_u, event, data) => events.push({ event, data }),
+      toRoom: (_r, event, data) => events.push({ event, data })
+    })
+
+    games.stepTicks('room-c', 1)
+    games.creditAttack('room-c', 'a', 4)
+
+    // Still rewindable, so nothing may be published to the opponent yet.
+    games.stepTicks('room-c', ROLLBACK_WINDOW_TICKS - 1)
+    expect(events.filter((e) => e.event === ServerEvent.GarbageDelivered)).toHaveLength(0)
+
+    vi.advanceTimersByTime(MATCH_STEP_MS * (ROLLBACK_WINDOW_TICKS + 4))
+    expect(events.filter((e) => e.event === ServerEvent.GarbageDelivered).length).toBeGreaterThan(0)
+
+    games.endRoom('room-c')
     vi.useRealTimers()
   })
 
@@ -159,8 +179,13 @@ describe('GamesService match loop', () => {
       }
     })
 
-    games.gameFor('room-e', 'a')!.events.onGameOver?.(0)
+    // Bury the well past the top — more rows than the board is tall.
+    games.gameFor('room-e', 'a')!.receiveGarbage(25)
+    games.stepTicks('room-e', 1)
+    // Elimination waits for the tick to become final, not for the engine event.
+    expect(events.filter((e) => e.event === ServerEvent.Elimination)).toHaveLength(0)
 
+    games.flushAttacks('room-e')
     expect(events.filter((e) => e.event === ServerEvent.Elimination)).toHaveLength(1)
     expect(events.filter((e) => e.event === ServerEvent.GameOver)).toHaveLength(1)
     expect(games.hasActiveMatch('room-e')).toBe(false)
@@ -169,6 +194,66 @@ describe('GamesService match loop', () => {
     vi.advanceTimersByTime(MATCH_STEP_MS * 10)
     expect(games.hasActiveMatch('room-e')).toBe(false)
     vi.useRealTimers()
+  })
+
+  it('rewinds a late input onto the tick it was stamped for', () => {
+    games = new GamesService()
+    const acks: ActionAckPayload[] = []
+    const noop = { toUser: () => undefined, toRoom: () => undefined }
+
+    // Reference: the input arrives on time and is simulated at tick 4.
+    games.startMatch('room-ref', ['a', 'b'], 555, noop)
+    games.stepTicks('room-ref', 3)
+    games.applyAction('room-ref', 'a', 'left', 0, 4)
+    games.stepTicks('room-ref', 8)
+    const onTime = games.gameFor('room-ref', 'a')!.serialize()
+    games.endRoom('room-ref')
+
+    // Same input, same stamp, but it shows up five ticks late.
+    games.startMatch('room-late', ['a', 'b'], 555, {
+      toUser: (_u, event, data) => {
+        if (event === ServerEvent.ActionAcknowledged) acks.push(data as ActionAckPayload)
+      },
+      toRoom: () => undefined
+    })
+    games.stepTicks('room-late', 9)
+    games.applyAction('room-late', 'a', 'left', 0, 4)
+    games.stepTicks('room-late', 2)
+    const rewound = games.gameFor('room-late', 'a')!.serialize()
+
+    expect(acks.at(-1)?.appliedTick).toBe(4)
+    expect(acks.at(-1)?.clamped).toBe(false)
+    expect(rewound).toEqual(onTime)
+
+    games.endRoom('room-late')
+  })
+
+  it('clamps an input older than the rollback window and corrects the client', () => {
+    games = new GamesService()
+    const toUser: Array<{ event: string; data: unknown }> = []
+
+    games.startMatch('room-x', ['a', 'b'], 21, {
+      toUser: (_u, event, data) => toUser.push({ event, data }),
+      toRoom: () => undefined
+    })
+
+    games.stepTicks('room-x', 40)
+    games.flushAttacks('room-x')
+    // Tick 1 is long since final — it cannot be rewound to at any price.
+    expect(games.applyAction('room-x', 'a', 'left', 0, 1)).toBe(true)
+
+    const ack = toUser.filter((e) => e.event === ServerEvent.ActionAcknowledged).at(-1)?.data as ActionAckPayload
+    expect(ack.clamped).toBe(true)
+    expect(ack.appliedTick).toBeGreaterThan(1)
+
+    const correction = toUser.filter((e) => e.event === ServerEvent.StateCorrection).at(-1)?.data as {
+      reason: string
+      tick: number
+    }
+    expect(correction.reason).toBe('clamped-input')
+    expect(correction.tick).toBeGreaterThanOrEqual(0)
+
+    games.endRoom('room-x')
   })
 
   it('seeds both players from the published shared seed', () => {

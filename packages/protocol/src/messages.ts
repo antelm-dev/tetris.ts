@@ -160,6 +160,16 @@ export interface StateCorrectionPayload {
   tick: number
   state: WireGameState
   /**
+   * Garbage rows owed at `tick` but not yet in the well — they are waiting for
+   * the next lock.
+   *
+   * Part of the correction because it cannot be derived from `state`: the board
+   * shows rows already inserted, never rows still queued. A client that guessed
+   * this queue would drop rows it had already been sent (diverging at the very
+   * next lock) or replay rows the server had already applied.
+   */
+  pending: Array<{ hole: number }>
+  /**
    * Why the server sent it: a periodic baseline, or a specific input the client
    * predicted differently (clamped because it arrived past the rollback window).
    */

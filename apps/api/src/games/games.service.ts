@@ -4,6 +4,8 @@ import type { GameState, GarbageRow, RandomFn } from '@tetris/engine'
 import {
   CORRECTION_INTERVAL_TICKS,
   GARBAGE_DELAY_TICKS,
+  MAX_INPUT_LEAD_TICKS,
+  MAX_QUEUED_INPUTS,
   ROLLBACK_WINDOW_TICKS,
   ServerEvent,
   TICK_MS,
@@ -80,6 +82,8 @@ type PlayerRuntime = {
   history: Map<number, TickHistory>
   /** Highest inbound action sequence accepted, for duplicate/stale rejection. */
   lastSeq: number
+  /** Inputs currently held across every scheduled tick. See {@link MAX_QUEUED_INPUTS}. */
+  queued: number
   lastLockSpin: boolean
   /** Whether a piece locked during the tick currently being simulated. */
   lockedThisTick: boolean
@@ -235,6 +239,7 @@ export class GamesService implements OnModuleDestroy {
         attacks: new Map(),
         history: new Map(),
         lastSeq: -1,
+        queued: 0,
         lastLockSpin: false,
         lockedThisTick: false,
         tickAttack: 0,
@@ -272,20 +277,37 @@ export class GamesService implements OnModuleDestroy {
     const match = this.matches.get(roomId)
     if (!match || match.ended) return false
     const player = match.players.get(userId)
-    if (!player || player.eliminated || player.game.gameOver) return false
+    if (!player || player.eliminated) return false
+
+    const earliestRewindable = match.confirmedThrough + 1
+    // A live game-over may still be provisional. Refusing every input from a
+    // topped-out engine would throw away exactly the late input that rewinds the
+    // top-out away, so only a *confirmed* top-out closes the door.
+    if (player.game.gameOver && applyTick < earliestRewindable) return false
 
     if (seq <= player.lastSeq) return false
     player.lastSeq = seq
     // Versus matches are continuous — a client pause must not freeze authority.
     if (action === 'pause') return false
 
-    const earliestRewindable = match.confirmedThrough + 1
     let appliedTick = applyTick
     let clamped = false
 
     if (applyTick < earliestRewindable) {
       appliedTick = match.tick + 1
       clamped = true
+    } else if (applyTick > match.tick + MAX_INPUT_LEAD_TICKS) {
+      // Far beyond any plausible pacing error — treat as a stuck or hostile
+      // client rather than parking the input on the timeline indefinitely.
+      appliedTick = match.tick + MAX_INPUT_LEAD_TICKS
+      clamped = true
+    }
+
+    if (player.queued >= MAX_QUEUED_INPUTS) {
+      this.logger.warn(
+        `Room ${roomId}: ${userId} has ${player.queued} inputs queued — dropping seq=${seq} until the backlog drains`
+      )
+      return false
     }
 
     this.schedule(player, appliedTick, { seq, action })
@@ -378,6 +400,13 @@ export class GamesService implements OnModuleDestroy {
     player.attacks.set(at, (player.attacks.get(at) ?? 0) + rows)
   }
 
+  /** Test helper: force a correction for one player, as the loop does periodically. */
+  emitCorrectionFor(roomId: string, userId: string): void {
+    const match = this.matches.get(roomId)
+    const player = match?.players.get(userId)
+    if (match && player) this.emitCorrection(match, player, 'baseline')
+  }
+
   /** Test helper: the board state the client would be corrected to. */
   confirmedStateFor(roomId: string, userId: string): GameState | undefined {
     const match = this.matches.get(roomId)
@@ -409,6 +438,7 @@ export class GamesService implements OnModuleDestroy {
 
   /** Queue an input on a tick, keeping each tick's inputs in sequence order. */
   private schedule(player: PlayerRuntime, tick: number, input: ScheduledInput): void {
+    player.queued += 1
     const existing = player.inputs.get(tick)
     if (!existing) {
       player.inputs.set(tick, [input])
@@ -538,7 +568,11 @@ export class GamesService implements OnModuleDestroy {
   private prune(match: MatchRuntime, below: number): void {
     for (const player of match.players.values()) {
       for (const tick of player.history.keys()) if (tick < below) player.history.delete(tick)
-      for (const tick of player.inputs.keys()) if (tick < below) player.inputs.delete(tick)
+      for (const [tick, queued] of player.inputs) {
+        if (tick >= below) continue
+        player.queued -= queued.length
+        player.inputs.delete(tick)
+      }
       for (const tick of player.garbage.keys()) if (tick < below) player.garbage.delete(tick)
     }
   }
@@ -591,13 +625,17 @@ export class GamesService implements OnModuleDestroy {
     if (survivors.length <= 1) this.finishMatch(match)
   }
 
+  /**
+   * End the match once *confirmed* eliminations leave at most one player.
+   *
+   * Deliberately does not force the confirmation horizon forward. A live engine
+   * reporting `gameOver` is only a provisional top-out — a late input stamped
+   * inside the rollback window can still rewind it away — and confirming early
+   * to react to it would publish eliminations and attacks for ticks the server
+   * has promised to keep rewindable. The horizon advances on the loop's own
+   * schedule in {@link confirm}, and eliminations follow from there.
+   */
   private checkMatchEnd(match: MatchRuntime): void {
-    if (match.ended) return
-    const alive = [...match.players.values()].filter((p) => !p.eliminated && !p.game.gameOver)
-    if (alive.length > 1) return
-    // A top-out ends the match only once its tick is final, so drain the
-    // confirmed backlog rather than acting on a still-rewindable game-over.
-    this.confirm(match, match.tick)
     if (match.ended) return
     const still = [...match.players.values()].filter((p) => !p.eliminated)
     if (still.length <= 1) this.finishMatch(match)
@@ -737,6 +775,7 @@ export class GamesService implements OnModuleDestroy {
       userId: player.userId,
       tick,
       state: entry.state as WireGameState,
+      pending: entry.pending.map((row) => ({ hole: row.hole })),
       reason
     }
     match.emit.toUser(player.userId, ServerEvent.StateCorrection, payload)

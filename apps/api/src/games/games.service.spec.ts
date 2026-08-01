@@ -2,7 +2,14 @@ import { Game } from '@tetris/engine'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EngineGameSession } from './engine-game-session'
 import { GamesService, MATCH_STEP_MS, SNAPSHOT_INTERVAL_MS } from './games.service'
-import { GARBAGE_DELAY_TICKS, ROLLBACK_WINDOW_TICKS, ServerEvent, type ActionAckPayload } from '@tetris/protocol'
+import {
+  GARBAGE_DELAY_TICKS,
+  MAX_INPUT_LEAD_TICKS,
+  MAX_QUEUED_INPUTS,
+  ROLLBACK_WINDOW_TICKS,
+  ServerEvent,
+  type ActionAckPayload
+} from '@tetris/protocol'
 
 function seededGame(seed = 1): Game {
   let n = seed
@@ -331,6 +338,80 @@ describe('GamesService match loop', () => {
     expect(laggy).toEqual(perfect)
     // Guard against the assertion passing because nothing actually happened.
     expect(perfect.board.flat().filter((cell) => cell !== 0).length).toBeGreaterThan(0)
+  })
+
+  it('bounds how far into the future an input may be stamped', () => {
+    games = new GamesService()
+    const toUser: Array<{ event: string; data: unknown }> = []
+
+    games.startMatch('room-lead', ['a', 'b'], 77, {
+      toUser: (_u, event, data) => toUser.push({ event, data }),
+      toRoom: () => undefined
+    })
+    games.stepTicks('room-lead', 10)
+    const live = games.currentTick('room-lead')!
+
+    // At the edge of the allowance: accepted untouched.
+    expect(games.applyAction('room-lead', 'a', 'left', 0, live + MAX_INPUT_LEAD_TICKS)).toBe(true)
+    const edge = toUser.findLast((e) => e.event === ServerEvent.ActionAcknowledged)?.data as ActionAckPayload
+    expect(edge.clamped).toBe(false)
+    expect(edge.appliedTick).toBe(live + MAX_INPUT_LEAD_TICKS)
+
+    // Beyond it, the stamp is not pacing error — it is an input parked on the
+    // timeline forever, so it gets pulled back to the allowed edge.
+    expect(games.applyAction('room-lead', 'a', 'left', 1, 10_000_000)).toBe(true)
+    const far = toUser.findLast((e) => e.event === ServerEvent.ActionAcknowledged)?.data as ActionAckPayload
+    expect(far.clamped).toBe(true)
+    expect(far.appliedTick).toBe(live + MAX_INPUT_LEAD_TICKS)
+
+    games.endRoom('room-lead')
+  })
+
+  it('refuses to queue inputs without bound', () => {
+    games = new GamesService()
+    games.startMatch('room-flood', ['a', 'b'], 5, {
+      toUser: () => undefined,
+      toRoom: () => undefined
+    })
+    games.stepTicks('room-flood', 1)
+
+    let accepted = 0
+    // Every stamp is individually legal; only the volume is the problem.
+    for (let seq = 0; seq < MAX_QUEUED_INPUTS * 2; seq++) {
+      if (games.applyAction('room-flood', 'a', 'left', seq, 1 + (seq % MAX_INPUT_LEAD_TICKS))) accepted++
+    }
+
+    expect(accepted).toBe(MAX_QUEUED_INPUTS)
+    games.endRoom('room-flood')
+  })
+
+  it('sends the pending garbage queue with a correction', () => {
+    games = new GamesService()
+    const toUser: Array<{ event: string; data: unknown }> = []
+
+    games.startMatch('room-pending', ['a', 'b'], 64, {
+      toUser: (_u, event, data) => toUser.push({ event, data }),
+      toRoom: () => undefined
+    })
+
+    // Owe 'b' four rows, then run until they are due but still waiting for a
+    // lock. The board cannot show them, so only the correction payload can.
+    games.stepTicks('room-pending', 1)
+    games.creditAttack('room-pending', 'a', 4)
+    games.flushAttacks('room-pending')
+    games.stepTicks('room-pending', GARBAGE_DELAY_TICKS + 4)
+    games.flushAttacks('room-pending')
+
+    expect(games.pendingGarbageFor('room-pending', 'b').length).toBeGreaterThan(0)
+
+    games.emitCorrectionFor('room-pending', 'b')
+    const correction = toUser.findLast((e) => e.event === ServerEvent.StateCorrection)?.data as {
+      pending: Array<{ hole: number }>
+    }
+    expect(correction.pending).toHaveLength(4)
+    expect(correction.pending.every((row) => typeof row.hole === 'number')).toBe(true)
+
+    games.endRoom('room-pending')
   })
 
   it('seeds both players from the published shared seed', () => {

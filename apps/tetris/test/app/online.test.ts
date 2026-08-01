@@ -474,6 +474,39 @@ describe('OnlineClient', () => {
     expect(received).toEqual([[{ hole: 8 }]])
   })
 
+  it('adopts authoritative pending garbage even when engine state already agrees', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 29 })))
+    for (let tick = 1; tick <= 5; tick++) client.pump(TICK * tick)
+
+    const game = client.localGame!
+    const received: unknown[] = []
+    const original = game.receiveGarbage.bind(game)
+    game.receiveGarbage = (rows) => {
+      received.push(rows)
+      original(rows)
+    }
+
+    // The visible/engine state agrees, but the authoritative queue does not.
+    // A correction must compare both because pending rows change the next lock.
+    socket.push(
+      ServerEvent.StateCorrection,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        userId: 'user-1',
+        tick: client.match!.tick,
+        state: game.serialize(),
+        pending: [{ hole: 6 }],
+        reason: 'baseline'
+      })
+    )
+
+    client.sendAction('push')
+    client.pump(TICK * 7)
+    expect(received).toEqual([[{ hole: 6 }]])
+  })
+
   it('keeps a wireLocalEvents onLock composed with the client bookkeeping', async () => {
     await client.connect()
     socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 9 })))

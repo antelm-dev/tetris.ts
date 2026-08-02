@@ -7,11 +7,25 @@
  *
  * Feature flag (UI only, not used here): `online_multiplayer_ui`.
  */
-import { COLS, Game, ROWS, mulberry32, type Action, type GameEvents, type GameProjection } from '@tetris/engine'
+import {
+  COLS,
+  Game,
+  ROWS,
+  mulberry32,
+  type Action,
+  type GameEvents,
+  type GameProjection,
+  type GameState,
+  type GarbageRow,
+  type Slot
+} from '@tetris/engine'
 import {
   ClientEvent,
   PROTOCOL_VERSION,
+  ROLLBACK_WINDOW_TICKS,
   ServerEvent,
+  TICK_MS,
+  tickAt,
   type ActionAckPayload,
   type AuthenticatePayload,
   type ConnectedPayload,
@@ -21,11 +35,14 @@ import {
   type GameOverPayload,
   type GameStartedPayload,
   type GarbageDeliveryPayload,
+  type PingPayload,
   type PlayerActionPayload,
+  type PongPayload,
   type RoomCreatePayload,
   type RoomStatePayload,
   type ServerEnvelope,
-  type SnapshotPayload
+  type SnapshotPayload,
+  type StateCorrectionPayload
 } from '@tetris/protocol'
 import { io, type Socket } from 'socket.io-client'
 
@@ -92,12 +109,30 @@ export interface RemoteProjection {
   gameOver: boolean
 }
 
+/** An input bound to the tick it is simulated on, locally and on the server. */
+interface ScheduledInput {
+  seq: number
+  action: GameAction
+}
+
+/** Everything needed to resume the local simulation from one tick boundary. */
+interface TickHistory {
+  state: GameState
+  pending: GarbageRow[]
+}
+
 export interface OnlineMatchState {
   roomId: string
   seed: number
   startedAt: number
+  /** Milliseconds per tick, as declared by the server. */
+  tickMs: number
+  /** How far the server will rewind for a late input. */
+  rollbackWindowTicks: number
   /** Local predicted engine; undefined outside an active match. */
   localGame: Game | null
+  /** Highest tick simulated locally; -1 before the first step. */
+  tick: number
   /** Highest outbound action seq that has been acknowledged. */
   lastAckedSeq: number
   /** Next seq that will be attached to a local input. */
@@ -140,6 +175,89 @@ export interface OnlineClientOptions {
   createSocket?: OnlineSocketFactory
   /** Override `Date.now` for deterministic action timestamps in tests. */
   now?: () => number
+}
+
+/**
+ * Cap on ticks simulated in one {@link OnlineClient.pump}. A long stall (alt-tab,
+ * a slow frame, a laptop lid) must not dump seconds of gameplay into one frame;
+ * the server's own loop clamps the same way, and the correction channel closes
+ * whatever gap the clamp opens.
+ */
+const MAX_CATCHUP_TICKS = 6
+
+/**
+ * How many ticks of history to retain (~1 s). Must comfortably exceed the
+ * server's rollback window, since corrections arrive at a confirmed tick that is
+ * already a window behind the live one.
+ */
+const HISTORY_TICKS = 60
+
+/** Clock-sync probe interval. Cheap, and drift is slow. */
+const CLOCK_SYNC_INTERVAL_MS = 2000
+
+/**
+ * Whether two states agree on everything that affects the simulation.
+ *
+ * Enumerates the *union of both objects' own keys* rather than a hand-written
+ * field list. Every field of `GameState` exists because it changes what happens
+ * next, so any field this comparison skips is a real divergence the correction
+ * channel would silently discard — and a hand-written list quietly stops
+ * covering a field the moment someone adds one. Hidden state (`lowestRow`, the
+ * spin flags, `gravityAccMs`) is exactly the kind that reads as equal on screen
+ * and diverges at the next lock.
+ *
+ * Compared structurally rather than via `JSON.stringify` because key order is
+ * not guaranteed across a wire round trip, and a false mismatch would trigger a
+ * pointless (and visible) replay on every correction.
+ */
+export function statesAgree(a: GameState, b: GameState): boolean {
+  const keys = new Set<string>([...Object.keys(a), ...Object.keys(b)])
+  for (const key of keys) {
+    const left = (a as unknown as Record<string, unknown>)[key]
+    const right = (b as unknown as Record<string, unknown>)[key]
+    if (key === 'board') {
+      if (!gridsAgree(left as Slot[][], right as Slot[][])) return false
+      continue
+    }
+    if (Array.isArray(left) || Array.isArray(right)) {
+      if (!listsAgree(left, right)) return false
+      continue
+    }
+    if (left !== null && right !== null && typeof left === 'object' && typeof right === 'object') {
+      // Nested records (`activePiece`) — one level is all `GameState` has.
+      if (!statesAgree(left as GameState, right as GameState)) return false
+      continue
+    }
+    if (left !== right) return false
+  }
+  return true
+}
+
+/** Row-for-row, cell-for-cell — including differing heights or row widths. */
+function gridsAgree(a: Slot[][] | undefined, b: Slot[][] | undefined): boolean {
+  if (!a || !b) return a === b
+  if (a.length !== b.length) return false
+  return a.every((row, y) => {
+    const other = b[y]
+    return !!other && row.length === other.length && row.every((cell, x) => cell === other[x])
+  })
+}
+
+function listsAgree(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
+  if (a.length !== b.length) return false
+  return a.every((value, i) => value === b[i])
+}
+
+/**
+ * Whether two pending-garbage queues are the same rows in the same order.
+ *
+ * Order matters as much as content: the holes are inserted bottom-up in
+ * sequence, so the same rows queued differently build a different stack.
+ */
+export function queuesAgree(a: readonly GarbageRow[], b: readonly GarbageRow[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((row, i) => row.hole === b[i]?.hole)
 }
 
 const EMPTY_STATE = (): OnlineClientState => ({
@@ -199,8 +317,28 @@ export class OnlineClient {
   private state: OnlineClientState = EMPTY_STATE()
   private readonly listeners = new Set<(state: OnlineClientState) => void>()
   private readonly boundHandlers = new Map<string, (...args: unknown[]) => void>()
-  /** Garbage deliveries waiting for their lock boundary. */
-  private pendingGarbage: GarbageDeliveryPayload[] = []
+  /** Tick -> inputs applied at the start of that tick. */
+  private readonly inputs = new Map<number, ScheduledInput[]>()
+  /** Tick -> garbage rows that become eligible to enter the well. */
+  private readonly garbage = new Map<number, GarbageRow[]>()
+  /** Tick -> resumable state, for rewinding when the server corrects us. */
+  private readonly history = new Map<number, TickHistory>()
+  /** Rows eligible but not yet inserted — held until the next lock. */
+  private pendingGarbage: GarbageRow[] = []
+  /** Whether a piece locked during the tick currently being simulated. */
+  private lockedThisTick = false
+  /** True while re-simulating, so bookkeeping does not notify per replayed tick. */
+  private replaying = false
+  /** Add to a local timestamp to get server time. See {@link applyPong}. */
+  private clockOffsetMs = 0
+  /**
+   * Last authoritative tick reading and when it was taken locally — the anchor
+   * local pacing extrapolates from. Null until the first pong of a match.
+   */
+  private anchor: { serverTick: number; atLocalMs: number } | null = null
+  /** Lowest round trip seen; the sample the offset is derived from. */
+  private bestRtt = Number.POSITIVE_INFINITY
+  private pingTimer: ReturnType<typeof setInterval> | null = null
   private disposed = false
   private connectWaiters: {
     resolve: () => void
@@ -361,9 +499,14 @@ export class OnlineClient {
   // --- Match -----------------------------------------------------------------
 
   /**
-   * Apply a local input immediately and emit `client:player:action`. Never
-   * sends boards, scores, attacks, or results. `pause` is a no-op online
-   * (server rejects it; local prediction must not pause either).
+   * Schedule a local input on the next tick and tell the server which tick that
+   * was. Never sends boards, scores, attacks, or results. `pause` is a no-op
+   * online (server rejects it; local prediction must not pause either).
+   *
+   * The input is stamped rather than applied "now": the server honors the stamp
+   * and rewinds if the packet arrives late, so both simulations run the action
+   * on the same tick no matter what the network did to it. The wait is at most
+   * one tick (~16 ms), so this costs no perceptible input lag.
    */
   public sendAction(action: GameAction): void {
     const match = this.state.match
@@ -376,11 +519,13 @@ export class OnlineClient {
 
     const seq = match.nextActionSeq
     match.nextActionSeq = seq + 1
-    match.localGame.action(action as Action)
+    const applyTick = match.tick + 1
+    this.schedule(applyTick, { seq, action })
 
     const payload: PlayerActionPayload = {
       roomId: match.roomId,
       seq,
+      applyTick,
       ts: this.now(),
       action
     }
@@ -388,7 +533,51 @@ export class OnlineClient {
     this.notify()
   }
 
-  /** Drive the local predicted engine (ms). Prefer this over `Game.tick`. */
+  /**
+   * Advance the local simulation to the tick the server should be on right now.
+   *
+   * Deliberately *not* driven by frame delta. A variable step makes two engines
+   * that received identical inputs land on different boards — which is exactly
+   * how a player's own screen and their opponent's view of it came to disagree.
+   * Ticks are whole and fixed-size; only how many run per frame varies.
+   */
+  public pump(nowMs: number = this.now()): void {
+    const match = this.state.match
+    if (!match?.localGame || this.state.lobby !== 'in-match' || match.gameOver) return
+
+    const target = this.targetTick(match, nowMs)
+    let steps = 0
+    while (match.tick < target && steps < MAX_CATCHUP_TICKS) {
+      this.stepTick(match.tick + 1)
+      steps++
+    }
+    if (steps > 0) this.notify()
+  }
+
+  /**
+   * The tick the server is expected to be on right now.
+   *
+   * Paced against the server's *reported* tick, not wall clock. The two are not
+   * interchangeable: the authoritative loop clamps catch-up and deliberately
+   * drops simulated time when it falls behind, so after any stall its tick sits
+   * permanently below what elapsed wall time implies. Pacing on wall time alone
+   * lets the client run away — stamping inputs for ticks the server reaches much
+   * later, or never — and no correction repairs that, because the anchor itself
+   * is what is wrong.
+   *
+   * Falls back to wall clock only until the first pong establishes an anchor.
+   */
+  private targetTick(match: OnlineMatchState, nowMs: number): number {
+    if (!this.anchor) return tickAt(nowMs + this.clockOffsetMs, match.startedAt)
+    const elapsed = Math.max(0, nowMs - this.anchor.atLocalMs)
+    return this.anchor.serverTick + Math.floor(elapsed / match.tickMs)
+  }
+
+  /**
+   * Legacy millisecond advance, kept for callers that drive the engine directly.
+   * Prefer {@link pump}: this one advances raw time and does not sit on the
+   * shared tick timeline, so it cannot be reconciled with the server.
+   */
   public advance(dtMs: number): void {
     const game = this.state.match?.localGame
     if (!game || this.state.lobby !== 'in-match') return
@@ -482,6 +671,10 @@ export class OnlineClient {
         sessionId: env.data.sessionId,
         lastError: null
       })
+      // Start syncing clocks now rather than at match start, so the first
+      // inputs of a match are already stamped against a converged estimate
+      // instead of being clamped while the first probes land.
+      this.startClockSync()
       this.resolveConnectWaiters()
     })
 
@@ -528,10 +721,19 @@ export class OnlineClient {
       this.beginMatch(env.data)
     })
 
+    on(ServerEvent.Pong, (raw: unknown) => {
+      const env = this.asEnvelope<PongPayload>(raw)
+      if (!env) return
+      this.applyPong(env.data)
+    })
+
     on(ServerEvent.ActionAcknowledged, (raw: unknown) => {
       const env = this.asEnvelope<ActionAckPayload>(raw)
       if (!env || !this.state.match) return
       if (env.data.roomId !== this.state.match.roomId) return
+      // A clamped input missed the tick we predicted it on. Move it to where the
+      // server actually ran it; the correction that follows rebuilds the board.
+      if (env.data.clamped) this.rescheduleClamped(env.data)
       if (env.data.seq > this.state.match.lastAckedSeq) {
         this.state.match.lastAckedSeq = env.data.seq
         this.notify()
@@ -542,6 +744,12 @@ export class OnlineClient {
       const env = this.asEnvelope<SnapshotPayload>(raw)
       if (!env || !this.state.match) return
       this.applySnapshot(env.data)
+    })
+
+    on(ServerEvent.StateCorrection, (raw: unknown) => {
+      const env = this.asEnvelope<StateCorrectionPayload>(raw)
+      if (!env || !this.state.match) return
+      this.applyCorrection(env.data)
     })
 
     on(ServerEvent.GarbageDelivered, (raw: unknown) => {
@@ -580,11 +788,7 @@ export class OnlineClient {
       ...previousEvents,
       onLock: (hard) => {
         previousOnLock?.(hard)
-        const match = this.state.match
-        if (!match) return
-        match.lockCount += 1
-        this.flushGarbage()
-        this.notify()
+        this.onLocked()
       }
     }
     game.start()
@@ -593,7 +797,10 @@ export class OnlineClient {
       roomId: payload.roomId,
       seed: payload.seed,
       startedAt: payload.startedAt,
+      tickMs: payload.tickMs || TICK_MS,
+      rollbackWindowTicks: payload.rollbackWindowTicks || ROLLBACK_WINDOW_TICKS,
       localGame: game,
+      tick: -1,
       lastAckedSeq: -1,
       nextActionSeq: 0,
       lockCount: 0,
@@ -601,8 +808,190 @@ export class OnlineClient {
       elimination: null,
       gameOver: null
     }
+    this.inputs.clear()
+    this.garbage.clear()
+    this.history.clear()
     this.pendingGarbage = []
+    // Tick -1 is the pre-match baseline, so a rollback to tick 0 has somewhere
+    // to rewind to.
+    this.history.set(-1, { state: game.serialize(), pending: [] })
     this.patch({ match, lobby: 'in-match', room: this.state.room })
+    this.startClockSync()
+  }
+
+  /** Bookkeeping for a lock, on both the live path and replays. */
+  private onLocked(): void {
+    const match = this.state.match
+    if (!match) return
+    match.lockCount += 1
+    this.lockedThisTick = true
+    if (!this.replaying) this.notify()
+  }
+
+  /** Move a clamped input from the tick we predicted to the one the server used. */
+  private rescheduleClamped(ack: ActionAckPayload): void {
+    for (const [tick, queued] of this.inputs) {
+      const index = queued.findIndex((input) => input.seq === ack.seq)
+      if (index < 0) continue
+      const [input] = queued.splice(index, 1)
+      if (queued.length === 0) this.inputs.delete(tick)
+      this.schedule(ack.appliedTick, input)
+      return
+    }
+  }
+
+  /** Queue an input on a tick, keeping each tick's inputs in sequence order. */
+  private schedule(tick: number, input: ScheduledInput): void {
+    const existing = this.inputs.get(tick)
+    if (!existing) {
+      this.inputs.set(tick, [input])
+      return
+    }
+    existing.push(input)
+    existing.sort((a, b) => a.seq - b.seq)
+  }
+
+  /**
+   * One tick of local simulation — deliberately the mirror image of the
+   * server's `stepPlayer`.
+   *
+   * The two must stay identical step for step: same order (inputs, advance,
+   * garbage), same fixed `TICK_MS`, same rule for when garbage may enter the
+   * well. That symmetry is what makes prediction correct rather than merely
+   * close, so a change here without the matching change on the server
+   * reintroduces exactly the drift this design removes.
+   */
+  private stepTick(tick: number): void {
+    const match = this.state.match
+    const game = match?.localGame
+    if (!match || !game) return
+    match.tick = tick
+
+    if (game.gameOver) {
+      this.history.set(tick, { state: game.serialize(), pending: this.clonePending() })
+      return
+    }
+
+    for (const input of this.inputs.get(tick) ?? []) {
+      game.action(input.action as Action)
+    }
+
+    const due = this.garbage.get(tick)
+    if (due?.length) this.pendingGarbage.push(...due)
+
+    this.lockedThisTick = false
+    game.advance(match.tickMs)
+
+    // Garbage waits for a lock rather than dropping in mid-piece (AC-03). With a
+    // shared timeline "the first lock at or after tick N" is the same event in
+    // both simulations — back when each side counted locks in its own private
+    // game, it was not.
+    if (this.pendingGarbage.length > 0 && (this.lockedThisTick || !game.activePiece)) {
+      const rows = this.pendingGarbage
+      this.pendingGarbage = []
+      game.receiveGarbage(rows)
+    }
+
+    this.history.set(tick, { state: game.serialize(), pending: this.clonePending() })
+    this.prune(tick - HISTORY_TICKS)
+  }
+
+  /**
+   * Rewind to just before `fromTick` and re-simulate to the present.
+   *
+   * Presentation hooks are muted for the replayed range — those locks, clears
+   * and level-ups already played once, and re-firing them would stack duplicate
+   * sound effects and particles on every correction. The lock hook stays live
+   * because garbage timing depends on it.
+   */
+  private rollbackTo(fromTick: number): boolean {
+    const match = this.state.match
+    const game = match?.localGame
+    if (!match || !game) return false
+    const prior = this.history.get(fromTick - 1)
+    if (!prior) return false
+
+    const resumeAt = match.tick
+    game.restore(prior.state)
+    this.pendingGarbage = [...prior.pending]
+
+    this.replaying = true
+    try {
+      game.replay(
+        () => {
+          for (let tick = fromTick; tick <= resumeAt; tick++) this.stepTick(tick)
+        },
+        { onLock: () => this.onLocked() }
+      )
+    } finally {
+      this.replaying = false
+    }
+    return true
+  }
+
+  /** Snapshot the pending queue. Rows are never mutated, so the array copy suffices. */
+  private clonePending(): GarbageRow[] {
+    return [...this.pendingGarbage]
+  }
+
+  private prune(below: number): void {
+    for (const tick of this.history.keys()) if (tick < below) this.history.delete(tick)
+    for (const tick of this.inputs.keys()) if (tick < below) this.inputs.delete(tick)
+    for (const tick of this.garbage.keys()) if (tick < below) this.garbage.delete(tick)
+  }
+
+  // --- Clock sync ------------------------------------------------------------
+
+  /**
+   * Estimate the offset between this machine's clock and the server's, so a
+   * locally chosen tick number means the same instant on both sides.
+   *
+   * Keeps the sample with the lowest round trip rather than averaging: the
+   * fastest probe is the one least distorted by queueing, so it carries the
+   * least uncertainty about where the midpoint actually was.
+   */
+  private startClockSync(): void {
+    this.stopClockSync()
+    this.sendPing()
+    this.pingTimer = setInterval(() => this.sendPing(), CLOCK_SYNC_INTERVAL_MS)
+  }
+
+  private stopClockSync(): void {
+    if (this.pingTimer !== null) {
+      clearInterval(this.pingTimer)
+      this.pingTimer = null
+    }
+  }
+
+  private sendPing(): void {
+    if (!this.socket?.connected) return
+    const payload: PingPayload = { clientTime: Math.floor(this.now()) }
+    this.emit(ClientEvent.Ping, payload)
+  }
+
+  private applyPong(pong: PongPayload): void {
+    const now = this.now()
+    const rtt = now - pong.clientTime
+    if (rtt < 0) return
+
+    // The authoritative tick anchor is re-taken on every valid sample, not only
+    // on the best one: it tracks a moving quantity (where the server's loop
+    // actually got to), and a stale anchor is precisely the failure being
+    // avoided. The wall-clock offset below is a static property of the two
+    // clocks, so that one does keep its best estimate.
+    const match = this.state.match
+    if (pong.serverTick !== null && match) {
+      // The tick was sampled one return leg ago, so the server has advanced by
+      // roughly half a round trip since.
+      const inFlightTicks = Math.round(rtt / 2 / match.tickMs)
+      this.anchor = { serverTick: pong.serverTick + inFlightTicks, atLocalMs: now }
+    }
+
+    if (rtt >= this.bestRtt) return
+    this.bestRtt = rtt
+    // Server time at the moment we receive this ≈ its send time plus the
+    // return leg; the offset turns our clock into its clock.
+    this.clockOffsetMs = pong.serverTime + rtt / 2 - now
   }
 
   private applySnapshot(payload: SnapshotPayload): void {
@@ -630,41 +1019,92 @@ export class OnlineClient {
     this.notify()
   }
 
+  /**
+   * Book a delivery onto the tick the server scheduled it for. Uses the wire
+   * hole list — never regenerates holes from local RNG.
+   *
+   * Normally the tick is still in the future and this is pure bookkeeping. If
+   * the delivery arrives late, the rows belong to a tick already simulated, so
+   * the local timeline is rewound and replayed with them included.
+   */
   private queueGarbage(payload: GarbageDeliveryPayload): void {
     const match = this.state.match
     const me = this.state.user?.id
     if (!match || !me) return
     if (payload.roomId !== match.roomId) return
     if (payload.toUserId !== me) return
-    // Enqueue only — drain exclusively from the local onLock path so rows
-    // never insert while a piece is active (AC-03), even when appliedAtLock
-    // is already in the past (apply at the *next* lock).
-    this.pendingGarbage.push(payload)
+
+    const at = payload.applyAtTick
+    this.garbage.set(at, [...(this.garbage.get(at) ?? []), ...payload.rows])
+    if (at <= match.tick) this.rollbackTo(at)
+    this.notify()
   }
 
   /**
-   * Apply queued deliveries whose `appliedAtLock` has been reached. Uses the
-   * wire hole list — never regenerates holes from local RNG. Called only from
-   * the composed local `onLock` handler.
+   * Accept the server's version of our own board and rebuild the present on top
+   * of it.
+   *
+   * Almost always a no-op: prediction and authority agree, so the correction
+   * matches what we already had and is dropped without touching the screen. The
+   * rest of the time this is the only thing standing between a small divergence
+   * and the permanent one where each player watches a different game.
    */
-  private flushGarbage(): void {
+  private applyCorrection(payload: StateCorrectionPayload): void {
     const match = this.state.match
     const game = match?.localGame
+    const me = this.state.user?.id
     if (!match || !game) return
+    if (payload.roomId !== match.roomId) return
+    if (me && payload.userId !== me) return
 
-    const remaining: GarbageDeliveryPayload[] = []
-    for (const delivery of this.pendingGarbage) {
-      if (delivery.appliedAtLock <= match.lockCount) {
-        game.receiveGarbage(delivery.rows)
-      } else {
-        remaining.push(delivery)
-      }
+    const mine = this.history.get(payload.tick)
+    const authoritative = payload.state as unknown as GameState
+    // The queue of garbage owed but not yet inserted comes from the server too.
+    // It cannot be read off the board — that shows rows already applied, never
+    // rows still waiting for a lock — so a client that guessed it would drop
+    // rows it had been sent, and diverge again at the very next lock.
+    //
+    // A payload without the field is wire data from an older peer, not a
+    // statement that nothing is pending: fall back to the local prediction for
+    // that tick. Clearing the queue here is the one thing that must not happen.
+    const authoritativePending = payload.pending
+      ? payload.pending.map((row) => ({ hole: row.hole }))
+      : [...(mine?.pending ?? this.pendingGarbage)]
+
+    // A correction is a no-op only when the engine state *and* the owed-garbage
+    // queue agree. The queue is deliberately absent from `GameState`, so
+    // comparing state alone silently accepts a divergence that is invisible
+    // right up until the next lock, when the rows land on one side only.
+    if (mine && statesAgree(mine.state, authoritative) && queuesAgree(mine.pending, authoritativePending)) {
+      return
     }
-    this.pendingGarbage = remaining
+
+    this.history.set(payload.tick, { state: authoritative, pending: authoritativePending })
+
+    if (payload.tick >= match.tick) {
+      // The server is ahead of us — adopt its state wholesale and resume there.
+      game.restore(authoritative)
+      match.tick = payload.tick
+      this.pendingGarbage = [...authoritativePending]
+    } else if (!this.rollbackTo(payload.tick + 1)) {
+      // Too old to replay from; take the state as-is rather than keep a board
+      // we already know is wrong.
+      game.restore(authoritative)
+      match.tick = payload.tick
+      this.pendingGarbage = [...authoritativePending]
+    }
+    this.notify()
   }
 
   private clearMatchInternal(): void {
+    this.stopClockSync()
     this.pendingGarbage = []
+    this.inputs.clear()
+    this.garbage.clear()
+    this.history.clear()
+    this.bestRtt = Number.POSITIVE_INFINITY
+    this.clockOffsetMs = 0
+    this.anchor = null
     if (this.state.match?.localGame) {
       this.state.match.localGame.events = {}
     }

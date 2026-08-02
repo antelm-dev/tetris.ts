@@ -71,7 +71,17 @@ export interface GameStartedPayload {
    * both streams from this value alone.
    */
   seed: number
+  /** Wall-clock epoch (server time) of tick 0. */
   startedAt: number
+  /** Milliseconds per simulation tick — the shared step both sides advance by. */
+  tickMs: number
+  /**
+   * How far back the server will rewind to honor a late input. An input that
+   * arrives more than this many ticks late is clamped instead, and the client
+   * is corrected. Effectively the maximum one-way latency the match tolerates
+   * without visible snapping.
+   */
+  rollbackWindowTicks: number
 }
 
 /**
@@ -90,12 +100,90 @@ export interface SnapshotPayload {
    * frames. Independent of {@link ServerEnvelope.seq}.
    */
   seq: number
+  /** Match tick this board was sampled at. */
+  tick: number
   score: number
   lines: number
   level: number
   board: WireSlot[][]
   activePiece?: WireActivePiece
   gameOver: boolean
+}
+
+/**
+ * Full private simulation state for one player at one tick — the wire spelling
+ * of the engine's `GameState`.
+ *
+ * Unlike {@link SnapshotPayload} this includes the bag, the hold slot and the
+ * RNG position, so it is only ever sent to the player it belongs to. Handing it
+ * to an opponent would leak their entire future piece queue.
+ */
+export interface WireGameState {
+  score: number
+  streak: number
+  b2b: number
+  lines: number
+  level: number
+  elapsedMs: number
+  gravityAccMs: number
+  lockTimer: number
+  lockResets: number
+  /** `null` encodes the engine's `-Infinity` (no descent yet). */
+  lowestRow: number | null
+  lastActionRotate: boolean
+  lastRotateKicked: boolean
+  canHold: boolean
+  gameOver: boolean
+  completed: boolean
+  paused: boolean
+  board: WireSlot[][]
+  activePiece?: WireActivePiece
+  holdPiece?: WirePieceName
+  nextPieces: WirePieceName[]
+  bag: WirePieceName[]
+  /** Piece-bag RNG position; `null` for an unrewindable source. */
+  rng: number | null
+}
+
+/**
+ * Authoritative correction for the recipient's *own* board.
+ *
+ * Sent at a confirmed tick — one the server will never rewind past — so the
+ * client can restore it and replay its own newer inputs on top. This is the
+ * channel that makes a divergence self-healing instead of permanent.
+ */
+export interface StateCorrectionPayload {
+  schemaVersion: PayloadSchemaVersion
+  roomId: string
+  userId: string
+  /** The tick `state` was captured at. */
+  tick: number
+  state: WireGameState
+  /**
+   * Garbage rows owed at `tick` but not yet in the well — they are waiting for
+   * the next lock.
+   *
+   * Part of the correction because it cannot be derived from `state`: the board
+   * shows rows already inserted, never rows still queued. A client that guessed
+   * this queue would drop rows it had already been sent (diverging at the very
+   * next lock) or replay rows the server had already applied.
+   */
+  pending: Array<{ hole: number }>
+  /**
+   * Why the server sent it: a periodic baseline, or a specific input the client
+   * predicted differently (clamped because it arrived past the rollback window).
+   */
+  reason: 'baseline' | 'clamped-input'
+}
+
+/** Reply to a client clock-sync probe. */
+export interface PongPayload {
+  /** The client's own `clientTime`, echoed for round-trip measurement. */
+  clientTime: number
+  /** Server wall clock when the pong was sent. */
+  serverTime: number
+  /** Server's current match tick, or `null` outside an active match. */
+  serverTick: number | null
 }
 
 /**
@@ -123,11 +211,15 @@ export interface GarbageDeliveryPayload {
   toUserId: string
   rows: Array<{ hole: number }>
   /**
-   * Lock-boundary counter on the recipient when this delivery is applied
-   * (0-based count of locks after match start). Documented so clients can
-   * schedule prediction relative to the same boundary the server uses.
+   * The match tick these rows enter the well on, for both server and client.
+   *
+   * Deliberately a tick and not a lock counter: the two sides' lock counts are
+   * positions in two different simulations, so scheduling on them made the
+   * recipient's board depend on which copy you asked. A tick is the same
+   * instant everywhere. The server picks one far enough ahead that clients
+   * normally receive it in time; a late arrival is handled by rollback.
    */
-  appliedAtLock: number
+  applyAtTick: number
 }
 
 export interface EliminationPayload {
@@ -160,4 +252,15 @@ export interface ActionAckPayload {
   /** The client action sequence that was accepted (same as inbound `seq`). */
   seq: number
   action: GameAction
+  /**
+   * The tick the server actually simulated this input on. Equal to the
+   * requested `applyTick` unless it arrived too late to rewind to.
+   */
+  appliedTick: number
+  /**
+   * True when the input missed its requested tick and was moved forward. The
+   * client's prediction is wrong from that tick on, and a
+   * {@link StateCorrectionPayload} follows.
+   */
+  clamped: boolean
 }

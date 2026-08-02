@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { PROTOCOL_VERSION } from '@tetris/protocol'
 import { AppModule } from '../src/app.module'
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter'
 
@@ -36,7 +37,7 @@ describe('Health (e2e)', () => {
     expect(Number.isNaN(Date.parse(body.timestamp))).toBe(false)
     expect(typeof body.uptime).toBe('number')
     expect(body.environment).toBe('test')
-    expect(body.protocolVersion).toBe(1)
+    expect(body.protocolVersion).toBe(PROTOCOL_VERSION)
   })
 
   it('unknown routes are handled by the exception filter', async () => {

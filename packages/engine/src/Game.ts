@@ -4,8 +4,17 @@ import { PIECES_SHAPES, kicksFor } from './const'
 import type { PieceName } from './const'
 import { MODES } from './modes'
 import type { ModeDef } from './modes'
+import { isStatefulRandom } from './random'
 import { clearScore, comboScore, hardDropScore, perfectClearScore, softDropScore, spinNoClearScore } from './scoring'
-import type { Action, Direction, GameEvents, GameProjection, GarbageRow } from './types'
+import type {
+  Action,
+  ActivePieceProjection,
+  Direction,
+  GameEvents,
+  GameProjection,
+  GameState,
+  GarbageRow
+} from './types'
 
 /**
  * How long (ms) a grounded piece sits before it locks. The player's window to
@@ -216,6 +225,108 @@ export default class Game {
     }
     this.lockTimer += dtMs
     if (this.lockTimer >= LOCK_DELAY) this.push()
+  }
+
+  /**
+   * Capture the full simulation state — see {@link GameState}. Everything is
+   * deep-copied, so the snapshot is stable no matter what the game does next.
+   */
+  public serialize(): GameState {
+    return {
+      score: this.score,
+      streak: this.streak,
+      b2b: this.b2b,
+      lines: this.lines,
+      level: this.level,
+      elapsedMs: this.elapsedMs,
+      gravityAccMs: this.gravityAccMs,
+      lockTimer: this.lockTimer,
+      lockResets: this.lockResets,
+      // `-Infinity` has no JSON encoding; `null` is its wire spelling.
+      lowestRow: Number.isFinite(this.lowestRow) ? this.lowestRow : null,
+      lastActionRotate: this.lastActionRotate,
+      lastRotateKicked: this.lastRotateKicked,
+      canHold: this.canHold,
+      gameOver: this._gameOver,
+      completed: this._completed,
+      paused: this.paused,
+      board: this.field.slots.map((row) => [...row]),
+      activePiece: this.activePiece
+        ? {
+            name: this.activePiece.name,
+            x: this.activePiece.x,
+            y: this.activePiece.y,
+            orientation: this.activePiece.orientation
+          }
+        : undefined,
+      holdPiece: this.holdPiece?.name,
+      nextPieces: this.nextPieces.map((piece) => piece.name),
+      bag: [...this.bag],
+      rng: isStatefulRandom(this.random) ? this.random.getState() : null
+    }
+  }
+
+  /**
+   * Overwrite this game with a previously {@link serialize}d state.
+   *
+   * Restoring is silent by design: no `GameEvents` fire, because a rollback
+   * rewinds *past* events that the presentation layer has already played. Use
+   * {@link replay} for the re-simulation that follows.
+   */
+  public restore(state: GameState): void {
+    this.score = state.score
+    this.streak = state.streak
+    this.b2b = state.b2b
+    this.lines = state.lines
+    this.level = state.level
+    this.elapsedMs = state.elapsedMs
+    this.gravityAccMs = state.gravityAccMs
+    this.lockTimer = state.lockTimer
+    this.lockResets = state.lockResets
+    this.lowestRow = state.lowestRow ?? -Infinity
+    this.lastActionRotate = state.lastActionRotate
+    this.lastRotateKicked = state.lastRotateKicked
+    this.canHold = state.canHold
+    this._gameOver = state.gameOver
+    this._completed = state.completed
+    this.paused = state.paused
+    this.field.load(state.board)
+    this.activePiece = state.activePiece ? Game.pieceFrom(state.activePiece) : undefined
+    this.holdPiece = state.holdPiece ? new Piece(state.holdPiece, PIECES_SHAPES[state.holdPiece]) : undefined
+    this.nextPieces = state.nextPieces.map((name) => new Piece(name, PIECES_SHAPES[name]))
+    this.bag = [...state.bag]
+    if (state.rng !== null && isStatefulRandom(this.random)) this.random.setState(state.rng)
+  }
+
+  /**
+   * Run `steps` with the live {@link GameEvents} swapped out for `during`
+   * (nothing at all, by default).
+   *
+   * Re-simulating ticks that already happened would otherwise re-fire their
+   * locks, clears and level-ups — duplicate sound effects and a particle storm
+   * on every correction. The engine still mutates normally; only the callbacks
+   * change. Pass `during` to keep hooks a caller needs for its *own*
+   * bookkeeping (rather than for presentation) alive across the replay.
+   */
+  public replay(steps: () => void, during: GameEvents = {}): void {
+    const live = this.events
+    this.events = during
+    try {
+      steps()
+    } finally {
+      this.events = live
+    }
+  }
+
+  /** Rebuild a positioned piece from its projection. */
+  private static pieceFrom(projection: ActivePieceProjection): Piece {
+    const piece = new Piece(projection.name, PIECES_SHAPES[projection.name])
+    // `rotate` is the only thing that keeps `shape` and `orientation` in step,
+    // so spin the fresh spawn-state piece up rather than assigning the field.
+    for (let turns = 0; turns < projection.orientation; turns++) piece.rotate('right')
+    piece.x = projection.x
+    piece.y = projection.y
+    return piece
   }
 
   /**

@@ -15,8 +15,13 @@ export const ClientEvent = {
   PlayerReady: 'client:player:ready',
   /** Host-only request to start the match once players are ready. */
   GameStart: 'client:game:start',
-  /** A timestamped, sequenced gameplay input for the authoritative engine. */
-  PlayerAction: 'client:player:action'
+  /** A tick-stamped, sequenced gameplay input for the authoritative engine. */
+  PlayerAction: 'client:player:action',
+  /**
+   * Clock-sync probe. The client needs the server's match tick to stamp inputs
+   * onto the same timeline the server simulates on — see {@link ServerEvent.Pong}.
+   */
+  Ping: 'client:ping'
 } as const
 
 /** Messages the server sends to clients. */
@@ -31,10 +36,20 @@ export const ServerEvent = {
   /** Room membership / ready-state changed. */
   RoomState: 'server:room:state',
   GameStarted: 'server:game:started',
-  /** Echo of an accepted {@link ClientEvent.PlayerAction} sequence. */
+  /** Reply to {@link ClientEvent.Ping}, carrying the server's current match tick. */
+  Pong: 'server:pong',
+  /** Echo of an accepted {@link ClientEvent.PlayerAction}, with the tick it landed on. */
   ActionAcknowledged: 'server:player:action:ack',
   /** Down-sampled opponent board state (target ~5–10 Hz, never 60 Hz). */
   Snapshot: 'server:game:snapshot',
+  /**
+   * Authoritative state for the *recipient's own* board at a confirmed tick.
+   *
+   * The client predicts locally and is normally right; this is how it finds out
+   * when it isn't, and the input it rewinds and replays from. Without this
+   * channel a divergence is permanent and silent.
+   */
+  StateCorrection: 'server:game:correction',
   /**
    * Attack intent (row count) routed from one player toward another.
    * Prefer {@link ServerEvent.GarbageDelivered} once holes are known.

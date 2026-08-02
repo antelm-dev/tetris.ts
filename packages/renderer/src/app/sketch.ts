@@ -415,7 +415,10 @@ const render = (el: HTMLElement, scores?: HighScores, host?: Host, web = false):
         onlineInput?.update(dt)
         const local = onlineClient.localGame
         if (local && onlineState.lobby === 'in-match' && !onlineState.match?.gameOver) {
-          onlineClient.advance(dt * 1000)
+          // Whole fixed ticks off the synced match clock, not this frame's
+          // delta: the server steps the same tick sequence, and a variable step
+          // here would put the two simulations back out of agreement.
+          onlineClient.pump()
         }
         if (local && onlineMotion) onlineMotion.update(dt, local)
         onlineFlashes?.update(dt)

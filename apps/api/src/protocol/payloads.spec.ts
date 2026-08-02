@@ -27,6 +27,7 @@ describe('protocol wire contract', () => {
       roomId: 'r1',
       userId: 'u1',
       seq: 3,
+      tick: 120,
       score: 100,
       lines: 4,
       level: 2,
@@ -46,7 +47,9 @@ describe('protocol wire contract', () => {
       schemaVersion: 1,
       roomId: 'r1',
       seq: 7,
-      action: 'left'
+      action: 'left',
+      appliedTick: 118,
+      clamped: false
     }
     const garbage: GarbageDeliveryPayload = {
       schemaVersion: 1,
@@ -55,7 +58,7 @@ describe('protocol wire contract', () => {
       fromUserId: 'u1',
       toUserId: 'u2',
       rows: [{ hole: 3 }, { hole: 5 }],
-      appliedAtLock: 2
+      applyAtTick: 136
     }
     const elimination: EliminationPayload = {
       schemaVersion: 1,

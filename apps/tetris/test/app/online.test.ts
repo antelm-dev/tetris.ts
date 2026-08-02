@@ -96,6 +96,34 @@ function boardOccupiedCount(game: Game): number {
   return game.project().board.reduce((sum, row) => sum + row.filter((c) => c !== 0).length, 0)
 }
 
+/** Milliseconds per tick — matches the protocol's shared clock. */
+const TICK = 16
+
+/** A match that starts at epoch 0, so `pump(TICK * n)` lands exactly on tick n. */
+function gameStarted(partial: Record<string, unknown> = {}) {
+  return {
+    roomId: 'room-1',
+    seed: 1,
+    startedAt: 0,
+    tickMs: TICK,
+    rollbackWindowTicks: 8,
+    ...partial
+  }
+}
+
+function delivery(partial: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    roomId: 'room-1',
+    deliverySeq: 1,
+    fromUserId: 'user-2',
+    toUserId: 'user-1',
+    rows: [{ hole: 1 }],
+    applyAtTick: 2,
+    ...partial
+  }
+}
+
 describe('OnlineClient', () => {
   let socket: FakeSocket
   let createSocket: OnlineSocketFactory
@@ -284,9 +312,9 @@ describe('OnlineClient', () => {
     expect(client.remoteProjection?.userId).toBe('user-2')
   })
 
-  it('applies GarbageDelivered holes only at the appliedAtLock boundary', async () => {
+  it('holds garbage scheduled for a tick until that tick reaches a lock', async () => {
     await client.connect()
-    socket.push(ServerEvent.GameStarted, nextEnvelope({ roomId: 'room-1', seed: 7, startedAt: 1 }))
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 7 })))
 
     const received: unknown[] = []
     const game = client.localGame!
@@ -298,38 +326,125 @@ describe('OnlineClient', () => {
 
     socket.push(
       ServerEvent.GarbageDelivered,
-      nextEnvelope({
-        schemaVersion: 1,
-        roomId: 'room-1',
-        deliverySeq: 1,
-        fromUserId: 'user-2',
-        toUserId: 'user-1',
-        rows: [{ hole: 3 }, { hole: 4 }],
-        appliedAtLock: 1
-      })
+      nextEnvelope(delivery({ rows: [{ hole: 3 }, { hole: 4 }], applyAtTick: 2 }))
     )
-    expect(received).toEqual([])
-    expect(client.match?.lockCount).toBe(0)
 
-    // Simulate the lock boundary the server documents.
-    game.events.onLock?.(false)
-    expect(client.match?.lockCount).toBe(1)
+    // Tick 2 arrives, but no piece has locked — rows must not shove an active
+    // piece into the stack.
+    client.pump(TICK * 3)
+    expect(received).toEqual([])
+    expect(game.activePiece).toBeTruthy()
+
+    // Hard drop on tick 3 locks the piece, which is when the rows may enter.
+    client.sendAction('push')
+    client.pump(TICK * 4)
     expect(received).toEqual([[{ hole: 3 }, { hole: 4 }]])
   })
 
-  it('does not insert garbage while a piece is active even if appliedAtLock is already past', async () => {
+  it('rewinds and replays when a delivery arrives for a tick already simulated', async () => {
+    // Reference client: the same delivery, received before its tick.
+    const onTimeSocket = new FakeSocket()
+    const onTime = new OnlineClient({
+      apiOrigin: 'http://api.test',
+      fetch: mockFetchOk(),
+      createSocket: () => onTimeSocket,
+      now: () => now
+    })
+    await onTime.login({ email: 'a@b.co', password: 'secret' })
+    await onTime.connect()
+    onTimeSocket.push(ServerEvent.GameStarted, envelope(1, gameStarted({ seed: 31 })))
+    onTimeSocket.push(ServerEvent.GarbageDelivered, envelope(2, delivery({ rows: [{ hole: 6 }], applyAtTick: 4 })))
+    onTime.sendAction('push')
+    for (let tick = 1; tick <= 12; tick++) onTime.pump(TICK * tick)
+
+    // Late client: identical inputs, but the delivery shows up eight ticks late.
     await client.connect()
-    socket.push(ServerEvent.GameStarted, nextEnvelope({ roomId: 'room-1', seed: 11, startedAt: 1 }))
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 31 })))
+    client.sendAction('push')
+    for (let tick = 1; tick <= 12; tick++) client.pump(TICK * tick)
+    socket.push(ServerEvent.GarbageDelivered, nextEnvelope(delivery({ rows: [{ hole: 6 }], applyAtTick: 4 })))
+
+    expect(client.match?.tick).toBe(onTime.match?.tick)
+    expect(client.localGame!.serialize()).toEqual(onTime.localGame!.serialize())
+    expect(boardOccupiedCount(client.localGame!)).toBeGreaterThan(0)
+
+    onTime.dispose()
+  })
+
+  it('adopts an authoritative correction that disagrees with local prediction', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 5 })))
+    for (let tick = 1; tick <= 10; tick++) client.pump(TICK * tick)
 
     const game = client.localGame!
-    expect(game.activePiece).toBeTruthy()
+    const drifted = game.serialize()
+    drifted.score = 4242
 
-    // Advance past the documented lock so lockCount >= appliedAtLock while a piece is still active.
-    game.events.onLock?.(false)
-    expect(client.match?.lockCount).toBe(1)
-    expect(game.activePiece).toBeTruthy()
+    socket.push(
+      ServerEvent.StateCorrection,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        userId: 'user-1',
+        tick: 6,
+        state: drifted,
+        reason: 'baseline'
+      })
+    )
 
-    const occupiedBefore = boardOccupiedCount(game)
+    expect(game.score).toBe(4242)
+    // Replayed forward to where we were, not left stranded at the corrected tick.
+    expect(client.match?.tick).toBe(10)
+  })
+
+  it('adopts corrections that differ only in hidden future-affecting engine state', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 5 })))
+    for (let tick = 1; tick <= 10; tick++) client.pump(TICK * tick)
+
+    const game = client.localGame!
+    const authoritative = game.serialize()
+    authoritative.lastActionRotate = !authoritative.lastActionRotate
+
+    socket.push(
+      ServerEvent.StateCorrection,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        userId: 'user-1',
+        tick: client.match!.tick,
+        state: authoritative,
+        reason: 'baseline'
+      })
+    )
+
+    expect(game.serialize().lastActionRotate).toBe(authoritative.lastActionRotate)
+  })
+
+  it('uses pong serverTick to avoid running far ahead after the server drops stalled time', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 17 })))
+
+    // A valid lagged-server sample: wall time advanced by 100 ticks, but the
+    // authoritative loop dropped the stall and has only simulated tick 0.
+    now = TICK * 100
+    socket.push(ServerEvent.Pong, nextEnvelope({ clientTime: now, serverTime: now, serverTick: 0 }))
+
+    for (let frame = 0; frame < 20; frame++) client.pump(now)
+
+    expect(client.match?.tick).toBeLessThanOrEqual(1)
+  })
+
+  it('keeps garbage that is due but waiting for a lock across a correction', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 23 })))
+
+    // Rows come due at tick 2 but no piece has locked, so they sit in the queue
+    // — invisible on the board, and unreconstructable from engine state alone.
+    socket.push(ServerEvent.GarbageDelivered, nextEnvelope(delivery({ rows: [{ hole: 8 }], applyAtTick: 2 })))
+    for (let tick = 1; tick <= 5; tick++) client.pump(TICK * tick)
+
+    const game = client.localGame!
     const received: unknown[] = []
     const original = game.receiveGarbage.bind(game)
     game.receiveGarbage = (rows) => {
@@ -337,33 +452,65 @@ describe('OnlineClient', () => {
       original(rows)
     }
 
+    // A correction arrives carrying the server's own view of that queue.
+    const authoritative = game.serialize()
+    authoritative.score += 10
     socket.push(
-      ServerEvent.GarbageDelivered,
+      ServerEvent.StateCorrection,
       nextEnvelope({
         schemaVersion: 1,
         roomId: 'room-1',
-        deliverySeq: 2,
-        fromUserId: 'user-2',
-        toUserId: 'user-1',
-        rows: [{ hole: 2 }, { hole: 5 }],
-        appliedAtLock: 1
+        userId: 'user-1',
+        tick: 4,
+        state: authoritative,
+        pending: [{ hole: 8 }],
+        reason: 'baseline'
       })
     )
 
-    expect(received).toEqual([])
-    expect(boardOccupiedCount(game)).toBe(occupiedBefore)
-
-    game.events.onLock?.(false)
-    expect(client.match?.lockCount).toBe(2)
-    expect(received).toEqual([[{ hole: 2 }, { hole: 5 }]])
-    expect(boardOccupiedCount(game)).toBeGreaterThan(occupiedBefore)
+    // The rows must still land at the next lock rather than vanish.
+    client.sendAction('push')
+    client.pump(TICK * 7)
+    expect(received).toEqual([[{ hole: 8 }]])
   })
 
-  it('keeps lockCount / garbage flush when wireLocalEvents adds another onLock', async () => {
+  it('adopts authoritative pending garbage even when engine state already agrees', async () => {
     await client.connect()
-    socket.push(ServerEvent.GameStarted, nextEnvelope({ roomId: 'room-1', seed: 9, startedAt: 1 }))
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 29 })))
+    for (let tick = 1; tick <= 5; tick++) client.pump(TICK * tick)
 
     const game = client.localGame!
+    const received: unknown[] = []
+    const original = game.receiveGarbage.bind(game)
+    game.receiveGarbage = (rows) => {
+      received.push(rows)
+      original(rows)
+    }
+
+    // The visible/engine state agrees, but the authoritative queue does not.
+    // A correction must compare both because pending rows change the next lock.
+    socket.push(
+      ServerEvent.StateCorrection,
+      nextEnvelope({
+        schemaVersion: 1,
+        roomId: 'room-1',
+        userId: 'user-1',
+        tick: client.match!.tick,
+        state: game.serialize(),
+        pending: [{ hole: 6 }],
+        reason: 'baseline'
+      })
+    )
+
+    client.sendAction('push')
+    client.pump(TICK * 7)
+    expect(received).toEqual([[{ hole: 6 }]])
+  })
+
+  it('keeps a wireLocalEvents onLock composed with the client bookkeeping', async () => {
+    await client.connect()
+    socket.push(ServerEvent.GameStarted, nextEnvelope(gameStarted({ seed: 9 })))
+
     const extraLocks: boolean[] = []
     client.wireLocalEvents({
       onLock: (hard) => {
@@ -371,30 +518,11 @@ describe('OnlineClient', () => {
       }
     })
 
-    const received: unknown[] = []
-    const original = game.receiveGarbage.bind(game)
-    game.receiveGarbage = (rows) => {
-      received.push(rows)
-      original(rows)
-    }
+    client.sendAction('push')
+    client.pump(TICK * 2)
 
-    socket.push(
-      ServerEvent.GarbageDelivered,
-      nextEnvelope({
-        schemaVersion: 1,
-        roomId: 'room-1',
-        deliverySeq: 1,
-        fromUserId: 'user-2',
-        toUserId: 'user-1',
-        rows: [{ hole: 1 }],
-        appliedAtLock: 1
-      })
-    )
-
-    game.events.onLock?.(true)
     expect(extraLocks).toEqual([true])
     expect(client.match?.lockCount).toBe(1)
-    expect(received).toEqual([[{ hole: 1 }]])
   })
 
   it('clears match state on game-over and dispose tears down the socket', async () => {

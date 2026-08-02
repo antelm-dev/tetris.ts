@@ -1,14 +1,22 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
 import { COLS, ROWS, Game, computeAttack } from '@tetris/engine'
-import type { GarbageRow, RandomFn } from '@tetris/engine'
+import type { GameState, GarbageRow, RandomFn } from '@tetris/engine'
 import {
+  CORRECTION_INTERVAL_TICKS,
+  GARBAGE_DELAY_TICKS,
+  MAX_INPUT_LEAD_TICKS,
+  MAX_QUEUED_INPUTS,
+  ROLLBACK_WINDOW_TICKS,
   ServerEvent,
+  TICK_MS,
   type ActionAckPayload,
   type EliminationPayload,
   type GameAction,
   type GameOverPayload,
   type GarbageDeliveryPayload,
   type SnapshotPayload,
+  type StateCorrectionPayload,
+  type WireGameState,
   type WireSlot
 } from '@tetris/protocol'
 import { EngineGameSession } from './engine-game-session'
@@ -24,8 +32,8 @@ export function matchGarbageSeed(seed: number): number {
   return (seed >>> 0) ^ 0x9e37_79b9
 }
 
-/** Fixed simulation step — ~60 Hz authority, snapshots are emitted far less often. */
-export const MATCH_STEP_MS = 16
+/** Fixed simulation step. Re-exported from the protocol so both sides share one clock. */
+export const MATCH_STEP_MS = TICK_MS
 /** Cap catch-up steps per wall-clock tick so a stall cannot runaway-simulate. */
 const MAX_STEPS_PER_TICK = 6
 /** Opponent snapshots at 10 Hz (within the 5–10 Hz budget). */
@@ -40,18 +48,49 @@ export type MatchEmit = {
   onEnded?: (roomId: string) => void
 }
 
+/** An input bound to the tick it is simulated on. */
+type ScheduledInput = {
+  seq: number
+  action: GameAction
+}
+
+/**
+ * Everything needed to resume simulation from one tick boundary.
+ *
+ * The pending garbage queue rides along with the engine state: a rollback that
+ * restored the board but not the queue would drop (or double-apply) rows — the
+ * board would look right and the *next* lock would be wrong.
+ */
+type TickHistory = {
+  state: GameState
+  pending: GarbageRow[]
+}
+
 type PlayerRuntime = {
   userId: string
   game: Game
   session: EngineGameSession
-  pendingGarbage: GarbageRow[]
+  /** Tick -> inputs applied at the start of that tick. */
+  inputs: Map<number, ScheduledInput[]>
+  /** Tick -> garbage rows that become eligible to enter the well. */
+  garbage: Map<number, GarbageRow[]>
+  /** Rows eligible but not yet inserted — held until a lock. See {@link stepPlayer}. */
+  pending: GarbageRow[]
+  /** Tick -> attack rows produced during that tick. Rewritten wholesale on rollback. */
+  attacks: Map<number, number>
+  /** Tick -> resumable state after that tick. Pruned below the confirmed horizon. */
+  history: Map<number, TickHistory>
+  /** Highest inbound action sequence accepted, for duplicate/stale rejection. */
+  lastSeq: number
+  /** Inputs currently held across every scheduled tick. See {@link MAX_QUEUED_INPUTS}. */
+  queued: number
   lastLockSpin: boolean
-  /** Number of locks completed (appliedAtLock uses this after increment). */
-  lockCount: number
+  /** Whether a piece locked during the tick currently being simulated. */
+  lockedThisTick: boolean
+  /** Attack accumulated during the tick currently being simulated. */
+  tickAttack: number
   snapshotSeq: number
   eliminated: boolean
-  /** Attack rows produced during the current resolve window. */
-  stepAttack: number
 }
 
 type MatchRuntime = {
@@ -65,7 +104,15 @@ type MatchRuntime = {
   timer: ReturnType<typeof setInterval> | null
   lastWallMs: number
   accMs: number
+  /** Highest tick simulated so far; -1 before the first step. */
+  tick: number
+  /**
+   * Highest tick whose cross-player effects have been committed. Everything at
+   * or below it is final and can never be rewound.
+   */
+  confirmedThrough: number
   lastSnapshotAt: number
+  lastCorrectionTick: number
   ended: boolean
   /** The loop-lag warning is emitted once per match, not once per late tick. */
   lagWarned: boolean
@@ -80,6 +127,20 @@ export type StartMatchResult = {
 /**
  * Owns authoritative match sessions and the fixed-step loop. The gateway stays
  * a transport: it validates payloads, then asks this service to mutate games.
+ *
+ * ## How authority and prediction stay in agreement
+ *
+ * Every input carries the match tick it belongs to, and this service honors that
+ * stamp rather than the moment the packet happened to arrive — rewinding the
+ * player's engine and re-simulating when an input turns up late. Because both
+ * sides run the same deterministic engine over the same tick sequence, the
+ * client's prediction and this simulation agree by construction instead of by
+ * luck.
+ *
+ * Rewinding makes recent ticks provisional, so anything a *second* player can
+ * observe — garbage, eliminations — is derived only from ticks older than
+ * {@link ROLLBACK_WINDOW_TICKS} ("confirmed"). Nothing already shown to an
+ * opponent can then be taken back.
  */
 @Injectable()
 export class GamesService implements OnModuleDestroy {
@@ -117,6 +178,13 @@ export class GamesService implements OnModuleDestroy {
     return !!match && !match.ended
   }
 
+  /** Current simulated tick for a room, or `null` when no match is live. */
+  currentTick(roomId: string): number | null {
+    const match = this.matches.get(roomId)
+    if (!match || match.ended) return null
+    return match.tick
+  }
+
   /**
    * Create one seeded engine/session per member and start the fixed-step loop.
    * Phase 1 expects exactly two `userIds`.
@@ -141,9 +209,12 @@ export class GamesService implements OnModuleDestroy {
       garbageRng: mulberry32(matchGarbageSeed(seed)),
       deliverySeq: 0,
       timer: null,
-      lastWallMs: Date.now(),
+      lastWallMs: startedAt,
       accMs: 0,
+      tick: -1,
+      confirmedThrough: -1,
       lastSnapshotAt: 0,
+      lastCorrectionTick: 0,
       ended: false,
       lagWarned: false,
       emit
@@ -162,46 +233,109 @@ export class GamesService implements OnModuleDestroy {
         userId,
         game,
         session,
-        pendingGarbage: [],
+        inputs: new Map(),
+        garbage: new Map(),
+        pending: [],
+        attacks: new Map(),
+        history: new Map(),
+        lastSeq: -1,
+        queued: 0,
         lastLockSpin: false,
-        lockCount: 0,
+        lockedThisTick: false,
+        tickAttack: 0,
         snapshotSeq: 0,
-        eliminated: false,
-        stepAttack: 0
+        eliminated: false
       }
-      this.wirePlayer(match, player)
+      this.wirePlayer(player)
       game.start()
+      // Tick -1 is the pre-match baseline, so a rollback to tick 0 still has
+      // somewhere to rewind to.
+      player.history.set(-1, { state: game.serialize(), pending: [] })
       players.set(userId, player)
       roomSessions.set(userId, session)
     })
 
     this.sessions.set(roomId, roomSessions)
     this.matches.set(roomId, match)
-    match.timer = setInterval(() => this.onTimer(match), MATCH_STEP_MS)
+    match.timer = setInterval(() => this.onTimer(match), TICK_MS)
     // Emit an immediate first snapshot window so clients are not blank for 100 ms.
     this.emitSnapshots(match, true)
     this.logger.log(`Started match in room ${roomId} seed=${seed} players=[${userIds.join(', ')}]`)
     return { seed, startedAt }
   }
 
-  /** Apply a sequenced action for a live room member. Returns whether it was accepted. */
-  applyAction(roomId: string, userId: string, action: GameAction, seq: number): boolean {
+  /**
+   * Accept a tick-stamped input for a live room member.
+   *
+   * Three cases, all ending with the input simulated on a definite tick: still
+   * in the future (schedule it), already simulated but still rewindable (roll
+   * back and replay), or older than the confirmed horizon (clamp forward and
+   * correct the client — the alternative would be un-sending garbage the
+   * opponent has already been shown).
+   */
+  applyAction(roomId: string, userId: string, action: GameAction, seq: number, applyTick: number): boolean {
     const match = this.matches.get(roomId)
     if (!match || match.ended) return false
     const player = match.players.get(userId)
-    if (!player || player.eliminated || player.game.gameOver) return false
+    if (!player || player.eliminated) return false
 
-    const accepted = player.session.applyAction(action, seq)
-    if (!accepted) return false
+    const earliestRewindable = match.confirmedThrough + 1
+    // A live game-over may still be provisional. Refusing every input from a
+    // topped-out engine would throw away exactly the late input that rewinds the
+    // top-out away, so only a *confirmed* top-out closes the door.
+    if (player.game.gameOver && applyTick < earliestRewindable) return false
+
+    if (seq <= player.lastSeq) return false
+    player.lastSeq = seq
+    // Versus matches are continuous — a client pause must not freeze authority.
+    if (action === 'pause') return false
+
+    let appliedTick = applyTick
+    let clamped = false
+
+    if (applyTick < earliestRewindable) {
+      appliedTick = match.tick + 1
+      clamped = true
+    } else if (applyTick > match.tick + MAX_INPUT_LEAD_TICKS) {
+      // Far beyond any plausible pacing error — treat as a stuck or hostile
+      // client rather than parking the input on the timeline indefinitely.
+      appliedTick = match.tick + MAX_INPUT_LEAD_TICKS
+      clamped = true
+    }
+
+    if (player.queued >= MAX_QUEUED_INPUTS) {
+      this.logger.warn(
+        `Room ${roomId}: ${userId} has ${player.queued} inputs queued — dropping seq=${seq} until the backlog drains`
+      )
+      return false
+    }
+
+    this.schedule(player, appliedTick, { seq, action })
+
+    // The tick has already been simulated — rewind to just before it and redo
+    // the range so the input lands where the client predicted it would.
+    if (!clamped && appliedTick <= match.tick) {
+      this.rollback(match, player, appliedTick)
+    }
 
     const ack: ActionAckPayload = {
       schemaVersion: 1,
       roomId,
       seq,
-      action
+      action,
+      appliedTick,
+      clamped
     }
     match.emit.toUser(userId, ServerEvent.ActionAcknowledged, ack)
-    this.resolveAttacks(match)
+
+    if (clamped) {
+      this.logger.verbose(
+        `Room ${roomId}: ${userId} input seq=${seq} for tick ${applyTick} arrived past the confirmed ` +
+          `horizon (${match.confirmedThrough}) — clamped to ${appliedTick}`
+      )
+      this.emitCorrection(match, player, 'clamped-input')
+    }
+
     this.checkMatchEnd(match)
     return true
   }
@@ -232,15 +366,17 @@ export class GamesService implements OnModuleDestroy {
     this.logger.log(`Cleared game sessions for room ${roomId}`)
   }
 
-  /** Test helper: net the current step-attack buffers without advancing time. */
+  /** Test helper: commit every simulated tick's cross-player effects immediately. */
   flushAttacks(roomId: string): void {
     const match = this.matches.get(roomId)
-    if (match) this.resolveAttacks(match)
+    if (match) this.confirm(match, match.tick)
   }
 
-  /** Test helper: inspect queued garbage rows for a player. */
+  /** Test helper: every garbage row owed to a player, queued or already due. */
   pendingGarbageFor(roomId: string, userId: string): readonly GarbageRow[] {
-    return this.matches.get(roomId)?.players.get(userId)?.pendingGarbage ?? []
+    const player = this.matches.get(roomId)?.players.get(userId)
+    if (!player) return []
+    return [...player.pending, ...[...player.garbage.values()].flat()]
   }
 
   /** Test helper: access a live match engine (for scripted event tests). */
@@ -248,7 +384,36 @@ export class GamesService implements OnModuleDestroy {
     return this.matches.get(roomId)?.players.get(userId)?.game
   }
 
-  private wirePlayer(match: MatchRuntime, player: PlayerRuntime): void {
+  /** Test helper: advance whole ticks without waiting on the wall clock. */
+  stepTicks(roomId: string, count: number): void {
+    const match = this.matches.get(roomId)
+    if (!match) return
+    for (let i = 0; i < count && !match.ended; i++) this.simulateTick(match, match.tick + 1)
+  }
+
+  /** Test helper: credit attack rows to a tick's ledger, as a line clear would. */
+  creditAttack(roomId: string, userId: string, rows: number, tick?: number): void {
+    const match = this.matches.get(roomId)
+    const player = match?.players.get(userId)
+    if (!match || !player) return
+    const at = tick ?? match.tick
+    player.attacks.set(at, (player.attacks.get(at) ?? 0) + rows)
+  }
+
+  /** Test helper: force a correction for one player, as the loop does periodically. */
+  emitCorrectionFor(roomId: string, userId: string): void {
+    const match = this.matches.get(roomId)
+    const player = match?.players.get(userId)
+    if (match && player) this.emitCorrection(match, player, 'baseline')
+  }
+
+  /** Test helper: the board state the client would be corrected to. */
+  confirmedStateFor(roomId: string, userId: string): GameState | undefined {
+    const match = this.matches.get(roomId)
+    return match?.players.get(userId)?.history.get(match.confirmedThrough)?.state
+  }
+
+  private wirePlayer(player: PlayerRuntime): void {
     const base = player.game.events
     player.game.events = {
       ...base,
@@ -258,63 +423,187 @@ export class GamesService implements OnModuleDestroy {
       },
       onClear: (rows, count, level) => {
         base.onClear?.(rows, count, level)
-        player.stepAttack += computeAttack(count, player.lastLockSpin)
+        player.tickAttack += computeAttack(count, player.lastLockSpin)
       },
       onLock: (hard) => {
         player.lastLockSpin = false
         base.onLock?.(hard)
-        player.lockCount += 1
-        this.deliverPendingGarbage(match, player)
-      },
-      onGameOver: (score) => {
-        base.onGameOver?.(score)
-        this.handleTopOut(match, player)
+        player.lockedThisTick = true
       }
+      // Deliberately no `onGameOver` hook: a top-out on an unconfirmed tick can
+      // still be rewound away, so elimination is driven from confirmed state in
+      // {@link confirm} instead.
     }
   }
 
-  private deliverPendingGarbage(match: MatchRuntime, player: PlayerRuntime): void {
-    if (player.pendingGarbage.length === 0) return
-    const rows = player.pendingGarbage
-    player.pendingGarbage = []
-    const appliedAtLock = player.lockCount
-    player.game.receiveGarbage(rows)
+  /** Queue an input on a tick, keeping each tick's inputs in sequence order. */
+  private schedule(player: PlayerRuntime, tick: number, input: ScheduledInput): void {
+    player.queued += 1
+    const existing = player.inputs.get(tick)
+    if (!existing) {
+      player.inputs.set(tick, [input])
+      return
+    }
+    existing.push(input)
+    existing.sort((a, b) => a.seq - b.seq)
+  }
 
-    const fromUserId = match.playerOrder.find((id) => id !== player.userId) ?? player.userId
+  /**
+   * Rewind `player` to just before `fromTick` and re-simulate up to the present.
+   *
+   * Replayed ticks rewrite their own attack ledger and history entries, so the
+   * outcome is exactly what would have happened had the input arrived on time.
+   * Events stay live: on the server they feed attack accounting rather than
+   * presentation, and recomputing them is the whole point.
+   */
+  private rollback(match: MatchRuntime, player: PlayerRuntime, fromTick: number): void {
+    const prior = player.history.get(fromTick - 1)
+    if (!prior) {
+      this.logger.warn(
+        `Room ${match.roomId}: no history at tick ${fromTick - 1} for ${player.userId} — skipping rollback`
+      )
+      return
+    }
+
+    player.game.restore(prior.state)
+    player.pending = [...prior.pending]
+    for (let tick = fromTick; tick <= match.tick; tick++) {
+      player.attacks.delete(tick)
+      this.stepPlayer(player, tick)
+    }
+  }
+
+  /** Simulate one tick for every player still in the match. */
+  private simulateTick(match: MatchRuntime, tick: number): void {
+    match.tick = tick
+    for (const player of match.players.values()) {
+      if (player.eliminated) continue
+      this.stepPlayer(player, tick)
+    }
+  }
+
+  /**
+   * One player, one tick: inputs, the fixed advance, then any garbage that has
+   * come due.
+   *
+   * Garbage waits for a lock instead of dropping in mid-piece — rows inserted
+   * under an active piece shove it up into the stack. The wait is deterministic
+   * now that both sides share a timeline: "the first lock at or after tick N" is
+   * the same event in both simulations, which it emphatically was not when each
+   * side counted locks in its own private game.
+   */
+  private stepPlayer(player: PlayerRuntime, tick: number): void {
+    // A topped-out player stays on the timeline — frozen, but still recording
+    // history so `confirm` can see the top-out and a rollback has somewhere to
+    // land. Feeding a dead game inputs would be worse than pointless: the engine
+    // treats `push` on a finished game as "restart", so a queued hard drop would
+    // silently bring the board back to life.
+    if (player.game.gameOver) {
+      player.attacks.set(tick, 0)
+      player.history.set(tick, {
+        state: player.game.serialize(),
+        pending: [...player.pending]
+      })
+      return
+    }
+
+    for (const input of player.inputs.get(tick) ?? []) {
+      player.game.action(input.action)
+    }
+
+    const due = player.garbage.get(tick)
+    if (due?.length) player.pending.push(...due)
+
+    player.tickAttack = 0
+    player.lockedThisTick = false
+    player.game.advance(TICK_MS)
+    player.attacks.set(tick, player.tickAttack)
+
+    if (player.pending.length > 0 && (player.lockedThisTick || !player.game.activePiece)) {
+      const rows = player.pending
+      player.pending = []
+      player.game.receiveGarbage(rows)
+    }
+
+    player.history.set(tick, {
+      state: player.game.serialize(),
+      pending: [...player.pending]
+    })
+  }
+
+  /**
+   * Commit every tick up to `target` that is no longer rewindable.
+   *
+   * The only place cross-player effects happen. Attacks are netted per tick and
+   * turned into garbage; a top-out counts only once its tick is final. Anything
+   * published here is permanent, which is exactly why it lags the live tick by
+   * {@link ROLLBACK_WINDOW_TICKS}.
+   */
+  private confirm(match: MatchRuntime, target: number): void {
+    if (match.playerOrder.length !== 2) return
+    const [aId, bId] = match.playerOrder
+    const a = match.players.get(aId)
+    const b = match.players.get(bId)
+    if (!a || !b) return
+
+    while (match.confirmedThrough < target && !match.ended) {
+      const tick = ++match.confirmedThrough
+
+      const net = (a.attacks.get(tick) ?? 0) - (b.attacks.get(tick) ?? 0)
+      a.attacks.delete(tick)
+      b.attacks.delete(tick)
+      if (net > 0) this.queueGarbage(match, b, net)
+      else if (net < 0) this.queueGarbage(match, a, -net)
+
+      for (const player of match.players.values()) {
+        if (player.eliminated) continue
+        if (player.history.get(tick)?.state.gameOver) this.handleTopOut(match, player)
+      }
+
+      this.prune(match, tick - 1)
+    }
+  }
+
+  /** Drop history, inputs and deliveries that can no longer be rewound to. */
+  private prune(match: MatchRuntime, below: number): void {
+    for (const player of match.players.values()) {
+      for (const tick of player.history.keys()) if (tick < below) player.history.delete(tick)
+      for (const [tick, queued] of player.inputs) {
+        if (tick >= below) continue
+        player.queued -= queued.length
+        player.inputs.delete(tick)
+      }
+      for (const tick of player.garbage.keys()) if (tick < below) player.garbage.delete(tick)
+    }
+  }
+
+  /**
+   * Schedule `count` garbage rows onto the target's future timeline and tell the
+   * room. Both sides insert the same holes on the same tick.
+   */
+  private queueGarbage(match: MatchRuntime, target: PlayerRuntime, count: number): void {
+    if (count <= 0 || target.eliminated) return
+    const rows: GarbageRow[] = Array.from({ length: count }, () => ({
+      hole: Math.floor(match.garbageRng() * COLS)
+    }))
+    const applyAtTick = match.tick + GARBAGE_DELAY_TICKS
+    target.garbage.set(applyAtTick, [...(target.garbage.get(applyAtTick) ?? []), ...rows])
+
+    const fromUserId = match.playerOrder.find((id) => id !== target.userId) ?? target.userId
     match.deliverySeq += 1
     const payload: GarbageDeliveryPayload = {
       schemaVersion: 1,
       roomId: match.roomId,
       deliverySeq: match.deliverySeq,
       fromUserId,
-      toUserId: player.userId,
+      toUserId: target.userId,
       rows,
-      appliedAtLock
+      applyAtTick
     }
     match.emit.toRoom(match.roomId, ServerEvent.GarbageDelivered, payload)
     this.logger.verbose(
-      `Room ${match.roomId}: ${rows.length} garbage row(s) ${fromUserId} -> ${player.userId} at lock ${appliedAtLock}`
+      `Room ${match.roomId}: ${rows.length} garbage row(s) ${fromUserId} -> ${target.userId} at tick ${applyAtTick}`
     )
-  }
-
-  private resolveAttacks(match: MatchRuntime): void {
-    if (match.ended || match.playerOrder.length !== 2) return
-    const [aId, bId] = match.playerOrder
-    const a = match.players.get(aId)!
-    const b = match.players.get(bId)!
-    const net = a.stepAttack - b.stepAttack
-    a.stepAttack = 0
-    b.stepAttack = 0
-    if (net > 0) this.queueGarbage(match, b, net)
-    else if (net < 0) this.queueGarbage(match, a, -net)
-  }
-
-  private queueGarbage(match: MatchRuntime, target: PlayerRuntime, count: number): void {
-    if (count <= 0 || target.eliminated) return
-    const rows: GarbageRow[] = Array.from({ length: count }, () => ({
-      hole: Math.floor(match.garbageRng() * COLS)
-    }))
-    target.pendingGarbage.push(...rows)
   }
 
   private handleTopOut(match: MatchRuntime, player: PlayerRuntime): void {
@@ -336,18 +625,20 @@ export class GamesService implements OnModuleDestroy {
     if (survivors.length <= 1) this.finishMatch(match)
   }
 
+  /**
+   * End the match once *confirmed* eliminations leave at most one player.
+   *
+   * Deliberately does not force the confirmation horizon forward. A live engine
+   * reporting `gameOver` is only a provisional top-out — a late input stamped
+   * inside the rollback window can still rewind it away — and confirming early
+   * to react to it would publish eliminations and attacks for ticks the server
+   * has promised to keep rewindable. The horizon advances on the loop's own
+   * schedule in {@link confirm}, and eliminations follow from there.
+   */
   private checkMatchEnd(match: MatchRuntime): void {
     if (match.ended) return
-    const alive = [...match.players.values()].filter((p) => !p.eliminated && !p.game.gameOver)
-    if (alive.length <= 1) {
-      for (const p of match.players.values()) {
-        if (!p.eliminated && p.game.gameOver) this.handleTopOut(match, p)
-      }
-      if (!match.ended) {
-        const still = [...match.players.values()].filter((p) => !p.eliminated && !p.game.gameOver)
-        if (still.length <= 1) this.finishMatch(match)
-      }
-    }
+    const still = [...match.players.values()].filter((p) => !p.eliminated)
+    if (still.length <= 1) this.finishMatch(match)
   }
 
   private finishMatch(match: MatchRuntime): void {
@@ -400,7 +691,7 @@ export class GamesService implements OnModuleDestroy {
     if (match.ended) return
     const now = Date.now()
     const behind = now - match.lastWallMs
-    const elapsed = Math.min(behind, MATCH_STEP_MS * MAX_STEPS_PER_TICK)
+    const elapsed = Math.min(behind, TICK_MS * MAX_STEPS_PER_TICK)
     match.lastWallMs = now
     match.accMs += elapsed
 
@@ -412,18 +703,17 @@ export class GamesService implements OnModuleDestroy {
     }
 
     let steps = 0
-    while (match.accMs >= MATCH_STEP_MS && steps < MAX_STEPS_PER_TICK) {
-      match.accMs -= MATCH_STEP_MS
-      for (const player of match.players.values()) {
-        if (player.eliminated || player.game.gameOver) continue
-        player.session.advance(MATCH_STEP_MS)
-      }
-      this.resolveAttacks(match)
+    while (match.accMs >= TICK_MS && steps < MAX_STEPS_PER_TICK) {
+      match.accMs -= TICK_MS
+      this.simulateTick(match, match.tick + 1)
       steps++
       if (match.ended) return
     }
 
+    this.confirm(match, match.tick - ROLLBACK_WINDOW_TICKS)
+    if (match.ended) return
     this.emitSnapshots(match, false)
+    this.emitCorrections(match)
     this.checkMatchEnd(match)
   }
 
@@ -443,6 +733,7 @@ export class GamesService implements OnModuleDestroy {
           roomId: match.roomId,
           userId: subject.userId,
           seq: subject.snapshotSeq,
+          tick: match.tick,
           score: projection.score,
           lines: projection.lines,
           level: projection.level,
@@ -453,5 +744,40 @@ export class GamesService implements OnModuleDestroy {
         match.emit.toUser(viewerId, ServerEvent.Snapshot, payload)
       }
     }
+  }
+
+  /**
+   * Periodically hand each player the authoritative version of their *own* board
+   * at the confirmed tick.
+   *
+   * Prediction is normally right, so this is usually a no-op the client verifies
+   * and discards. It exists for when it isn't: without it a divergence has
+   * nothing to correct it and simply persists, which is how two players end up
+   * watching two different games.
+   */
+  private emitCorrections(match: MatchRuntime): void {
+    if (match.ended || match.confirmedThrough < 0) return
+    if (match.confirmedThrough - match.lastCorrectionTick < CORRECTION_INTERVAL_TICKS) return
+    match.lastCorrectionTick = match.confirmedThrough
+    for (const player of match.players.values()) {
+      if (player.eliminated) continue
+      this.emitCorrection(match, player, 'baseline')
+    }
+  }
+
+  private emitCorrection(match: MatchRuntime, player: PlayerRuntime, reason: 'baseline' | 'clamped-input'): void {
+    const tick = match.confirmedThrough
+    const entry = player.history.get(tick)
+    if (!entry) return
+    const payload: StateCorrectionPayload = {
+      schemaVersion: 1,
+      roomId: match.roomId,
+      userId: player.userId,
+      tick,
+      state: entry.state as WireGameState,
+      pending: entry.pending.map((row) => ({ hole: row.hole })),
+      reason
+    }
+    match.emit.toUser(player.userId, ServerEvent.StateCorrection, payload)
   }
 }

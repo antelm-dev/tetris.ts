@@ -11,16 +11,19 @@ import {
 import {
   ClientEvent,
   PROTOCOL_VERSION,
+  ROLLBACK_WINDOW_TICKS,
   ServerEvent,
+  TICK_MS,
   authenticatePayloadSchema,
   gameStartPayloadSchema,
+  pingPayloadSchema,
   playerActionPayloadSchema,
   playerReadyPayloadSchema,
   roomCreatePayloadSchema,
   roomJoinPayloadSchema,
   roomLeavePayloadSchema
 } from '@tetris/protocol'
-import type { ServerEnvelope } from '@tetris/protocol'
+import type { GameStartedPayload, PongPayload, ServerEnvelope } from '@tetris/protocol'
 import type { Server, Socket } from 'socket.io'
 import type { ZodSchema } from 'zod'
 import { TokenService } from '../auth/token.service'
@@ -214,7 +217,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
           this.broadcastRoomState(roomId)
         }
       })
-      this.emitToRoomMembers(room.id, ServerEvent.GameStarted, { roomId: room.id, seed, startedAt })
+      const started: GameStartedPayload = {
+        roomId: room.id,
+        seed,
+        startedAt,
+        tickMs: TICK_MS,
+        rollbackWindowTicks: ROLLBACK_WINDOW_TICKS
+      }
+      this.emitToRoomMembers(room.id, ServerEvent.GameStarted, started)
       this.broadcastRoomState(room.id)
     } catch (err) {
       this.domainError(socket, ClientEvent.GameStart, err)
@@ -233,7 +243,28 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!room || room.status !== 'in-progress') return
     if (!this.games.hasActiveMatch(payload.roomId)) return
 
-    this.games.applyAction(payload.roomId, user.userId, payload.action, payload.seq)
+    this.games.applyAction(payload.roomId, user.userId, payload.action, payload.seq, payload.applyTick)
+  }
+
+  /**
+   * Clock sync. The client stamps inputs with a match tick, so it needs to know
+   * which tick the server is on — and the round trip tells it how far ahead of
+   * the server's *arrival* it has to aim.
+   */
+  @SubscribeMessage(ClientEvent.Ping)
+  ping(@ConnectedSocket() socket: TypedSocket, @MessageBody() body: unknown): void {
+    const user = this.requireAuth(socket)
+    if (!user) return
+    const payload = this.validate(socket, ClientEvent.Ping, pingPayloadSchema, body)
+    if (!payload) return
+
+    const roomId = socket.data.roomId
+    const pong: PongPayload = {
+      clientTime: payload.clientTime,
+      serverTime: Date.now(),
+      serverTick: roomId ? this.games.currentTick(roomId) : null
+    }
+    this.send(socket, ServerEvent.Pong, pong)
   }
 
   // --- Helpers ---------------------------------------------------------------

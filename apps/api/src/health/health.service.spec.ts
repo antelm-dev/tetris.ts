@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PROTOCOL_VERSION } from '@tetris/protocol'
 import { AppConfigService } from '../config/config.service'
 import { loadConfig } from '../config/env.schema'
 import { HealthService } from './health.service'
@@ -15,6 +16,6 @@ describe('HealthService', () => {
     expect(status.environment).toBe('test')
     expect(Number.isNaN(Date.parse(status.timestamp))).toBe(false)
     expect(status.uptime).toBeGreaterThanOrEqual(0)
-    expect(status.protocolVersion).toBe(1)
+    expect(status.protocolVersion).toBe(PROTOCOL_VERSION)
   })
 })

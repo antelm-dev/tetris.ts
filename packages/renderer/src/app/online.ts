@@ -249,6 +249,17 @@ function listsAgree(a: unknown, b: unknown): boolean {
   return a.every((value, i) => value === b[i])
 }
 
+/**
+ * Whether two pending-garbage queues are the same rows in the same order.
+ *
+ * Order matters as much as content: the holes are inserted bottom-up in
+ * sequence, so the same rows queued differently build a different stack.
+ */
+export function queuesAgree(a: readonly GarbageRow[], b: readonly GarbageRow[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((row, i) => row.hole === b[i]?.hole)
+}
+
 const EMPTY_STATE = (): OnlineClientState => ({
   connection: 'idle',
   lobby: 'none',
@@ -1047,8 +1058,6 @@ export class OnlineClient {
     if (me && payload.userId !== me) return
 
     const mine = this.history.get(payload.tick)
-    if (mine && statesAgree(mine.state, payload.state as unknown as GameState)) return
-
     const authoritative = payload.state as unknown as GameState
     // The queue of garbage owed but not yet inserted comes from the server too.
     // It cannot be read off the board — that shows rows already applied, never
@@ -1061,6 +1070,15 @@ export class OnlineClient {
     const authoritativePending = payload.pending
       ? payload.pending.map((row) => ({ hole: row.hole }))
       : [...(mine?.pending ?? this.pendingGarbage)]
+
+    // A correction is a no-op only when the engine state *and* the owed-garbage
+    // queue agree. The queue is deliberately absent from `GameState`, so
+    // comparing state alone silently accepts a divergence that is invisible
+    // right up until the next lock, when the rows land on one side only.
+    if (mine && statesAgree(mine.state, authoritative) && queuesAgree(mine.pending, authoritativePending)) {
+      return
+    }
+
     this.history.set(payload.tick, { state: authoritative, pending: authoritativePending })
 
     if (payload.tick >= match.tick) {

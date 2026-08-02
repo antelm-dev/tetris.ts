@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import Game from '@tetris/engine/Game'
 import { mulberry32 } from '@tetris/engine/random'
 import type { GameState } from '@tetris/engine/types'
-import { statesAgree } from '@tetris/renderer/app/online'
+import { queuesAgree, statesAgree } from '@tetris/renderer/app/online'
 
 /**
  * `statesAgree` decides whether an authoritative correction is discarded. A
@@ -73,6 +73,14 @@ describe('statesAgree', () => {
     expect(statesAgree(base, narrowRow)).toBe(false)
   })
 
+  it('does not speak for the pending garbage queue', () => {
+    // The queue is deliberately not part of `GameState`, so state equality can
+    // never stand in for queue equality — see `queuesAgree`.
+    const state = stateAfterPlay()
+    expect(Object.keys(state)).not.toContain('pending')
+    expect(statesAgree(state, structuredClone(state))).toBe(true)
+  })
+
   it('rejects a difference inside the active piece', () => {
     const base = stateAfterPlay()
     expect(base.activePiece).toBeTruthy()
@@ -83,5 +91,27 @@ describe('statesAgree', () => {
     const gone = structuredClone(base)
     gone.activePiece = undefined
     expect(statesAgree(base, gone)).toBe(false)
+  })
+})
+
+describe('queuesAgree', () => {
+  it('accepts identical queues, including two empty ones', () => {
+    expect(queuesAgree([], [])).toBe(true)
+    expect(queuesAgree([{ hole: 3 }, { hole: 7 }], [{ hole: 3 }, { hole: 7 }])).toBe(true)
+  })
+
+  it('rejects a queue that gained or lost a row', () => {
+    expect(queuesAgree([], [{ hole: 6 }])).toBe(false)
+    expect(queuesAgree([{ hole: 6 }], [])).toBe(false)
+    expect(queuesAgree([{ hole: 1 }], [{ hole: 1 }, { hole: 1 }])).toBe(false)
+  })
+
+  it('rejects a different hole column', () => {
+    expect(queuesAgree([{ hole: 2 }], [{ hole: 5 }])).toBe(false)
+  })
+
+  it('rejects the same rows in a different order', () => {
+    // Rows insert bottom-up in sequence, so reordering builds a different stack.
+    expect(queuesAgree([{ hole: 1 }, { hole: 9 }], [{ hole: 9 }, { hole: 1 }])).toBe(false)
   })
 })

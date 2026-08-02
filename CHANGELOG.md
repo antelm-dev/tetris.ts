@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.0](https://github.com/antelm-dev/tetris.ts/compare/tetris.ts-v1.2.1...tetris.ts-v1.3.0) (2026-08-02)
+
+
+### Features
+
+* **api:** add logger module and logs across the api ([b6470d1](https://github.com/antelm-dev/tetris.ts/commit/b6470d11b16a8f524075b53c403679c10979c8c0))
+* **api:** honor input ticks with server-side rollback ([3632223](https://github.com/antelm-dev/tetris.ts/commit/3632223c52e9b42c0395dc88e3d5a79ebc377f7f))
+* **api:** integrate Swagger for API documentation ([1d640da](https://github.com/antelm-dev/tetris.ts/commit/1d640dae9a39517a015a9cdd88d6c90926b6107d))
+* **engine:** add rewindable RNG and full game state serialization ([35430cf](https://github.com/antelm-dev/tetris.ts/commit/35430cf845d3fd087329b0be8fe0a5630f7194b9))
+* **protocol:** move gameplay onto a shared tick timeline (v2) ([1c80aac](https://github.com/antelm-dev/tetris.ts/commit/1c80aac270202c0ebd6577b1038b0ec072875014))
+* **renderer:** predict on the shared tick timeline and reconcile ([d02ce65](https://github.com/antelm-dev/tetris.ts/commit/d02ce656db446df328245e5c02801a38e9ce045b))
+* **tetris:** add injectCspConnectSrc vite plugin ([b9dd334](https://github.com/antelm-dev/tetris.ts/commit/b9dd334bc5be2b5ee01607fae62da0bac70dfd1e))
+
+
+### Bug Fixes
+
+* **api:** config .env loading ([818e009](https://github.com/antelm-dev/tetris.ts/commit/818e0092b8230ad0a76efe3b66faa792c304b224))
+* **api:** keep top-outs provisional and bound input scheduling ([427a7b5](https://github.com/antelm-dev/tetris.ts/commit/427a7b58adcb8c89db047ca773a1e0166a61c402))
+* **online:** rollback netcode — round 2 review fix ([c1b5a33](https://github.com/antelm-dev/tetris.ts/commit/c1b5a33aeaeec0d217580bfa54dcb27a005d33f1))
+* **renderer:** compare the owed-garbage queue before skipping a correction ([3ea0563](https://github.com/antelm-dev/tetris.ts/commit/3ea056329f9ebea96c54e2596cd3e320c3035259))
+* **renderer:** correct the pending queue used when replaying a correction ([3cfba22](https://github.com/antelm-dev/tetris.ts/commit/3cfba22bbaebdc8c4bddff1bef7d24b0fd9f93f9))
+* **renderer:** pace against the authoritative tick and compare full state ([166eaed](https://github.com/antelm-dev/tetris.ts/commit/166eaed65c324a9bde83d426f99051c1d8bd8f25))
+
 ## [1.2.1](https://github.com/antelm-dev/tetris.ts/compare/tetris.ts-v1.2.0...tetris.ts-v1.2.1) (2026-07-31)
 
 

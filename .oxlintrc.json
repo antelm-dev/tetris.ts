@@ -65,6 +65,17 @@
         "promise/no-callback-in-promise": ["error", { "exceptions": ["next"] }]
       }
     },
+    { "files": ["apps/asset-manager/server/**/*.ts"], "env": { "node": true } },
+    {
+      "files": ["apps/asset-manager/test/**/*.ts"],
+      "plugins": ["vitest"],
+      "env": { "node": true, "vitest": true },
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "vitest/valid-expect": "off"
+      }
+    },
     { "files": ["**/*.d.ts"], "rules": { "typescript/consistent-type-imports": "off" } },
     {
       "files": ["apps/tetris/test/**/*.ts"],

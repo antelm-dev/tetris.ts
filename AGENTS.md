@@ -5,6 +5,7 @@
 - HTML and CSS are not allowed for user interfaces.
 - Always implement user interfaces with p5.js.
 - Do not introduce HTML- or CSS-based UI frameworks or components.
+- These rules apply to the game (`apps/tetris`, `packages/renderer`); internal developer tooling such as `apps/asset-manager` is exempt and may use HTML/CSS.
 
 ## Development
 

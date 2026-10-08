@@ -55,7 +55,10 @@
               <h2 id="active-title">Loading…</h2>
               <span id="active-description"></span>
             </div>
-            <span id="active-count" class="active-count">—</span>
+            <span class="heading-counts">
+              <span id="active-drift" class="active-drift" title="Mirrors out of sync" hidden></span>
+              <span id="active-count" class="active-count">—</span>
+            </span>
           </div>
 
           <div class="toolbar">
@@ -65,7 +68,12 @@
               <input id="search" type="search" placeholder="Search assets…" autocomplete="off" />
               <kbd>/</kbd>
             </label>
-            <div id="filters" class="filters" role="group" aria-label="Filter assets"></div>
+            <div class="toolbar-actions">
+              <div id="filters" class="filters" role="group" aria-label="Filter assets"></div>
+              <button id="add-asset" class="add-button" type="button">
+                <span aria-hidden="true">+</span><span>Add</span>
+              </button>
+            </div>
           </div>
 
           <div class="table-heading" aria-hidden="true"><span>Asset</span><span>Size</span><span>Actions</span></div>

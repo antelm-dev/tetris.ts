@@ -8,7 +8,9 @@
     "types": ["vite/client", "node"],
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "vite.config.ts"]
+  "include": ["src/**/*.ts", "server/**/*.ts", "test/**/*.ts", "vite.config.ts", "vitest.config.ts"]
 }

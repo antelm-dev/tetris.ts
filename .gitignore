@@ -30,3 +30,4 @@ electron-run-*.json
 *.log
 .env*
 !*.example
+apps/asset-manager/dist

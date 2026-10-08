@@ -124,6 +124,20 @@ pnpm dev       # Vite + Rollup + Electron
 pnpm dev:web   # Vite + API Express, sur http://localhost:5174
 ```
 
+### Outils de développement
+
+```bash
+pnpm dev:assets   # gestionnaire d'assets (apps/asset-manager)
+```
+
+Le gestionnaire d'assets est un outil interne pour les sons, la musique et les
+images du jeu. Son interface tourne sur <http://localhost:5175> et son API sur
+<http://127.0.0.1:4010>. Il permet de prévisualiser, remplacer, ajouter et
+supprimer des fichiers (source et copies miroir mises à jour ensemble) et
+signale les assets inutilisés, modifiés dans git ou désynchronisés de leurs
+miroirs. Il n'écoute que sur l'interface locale et n'est pas destiné à être
+exposé.
+
 ### Vérification
 
 ```bash

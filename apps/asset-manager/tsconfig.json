@@ -7,10 +7,11 @@
     "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "types": ["vite/client", "node"],
     "strict": true,
+    "jsx": "react-jsx",
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "server/**/*.ts", "test/**/*.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "server/**/*.ts", "test/**/*.ts", "vite.config.ts", "vitest.config.ts"]
 }

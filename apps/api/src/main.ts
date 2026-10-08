@@ -54,7 +54,9 @@ async function bootstrap(): Promise<void> {
       app,
       new DocumentBuilder()
         .setTitle('Tetris API')
-        .setDescription('REST surface of the Tetris modular monolith. Realtime play runs over the WebSocket namespace and is not covered here.')
+        .setDescription(
+          'REST surface of the Tetris modular monolith. Realtime play runs over the WebSocket namespace and is not covered here.'
+        )
         .setVersion('1.0')
         .addBearerAuth()
         .build()

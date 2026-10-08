@@ -18,6 +18,9 @@ writes are refused unless the request's Host is `localhost`, `127.0.0.1`, or `::
 
 ## Using it
 
+The UI is React + Chakra UI v3 (`src/`), always in dark mode (`class="dark"` on `<html>`).
+
+- **Search** filters by filename (`/` focuses it, Escape clears it); the filter control narrows by category or **Unused**.
 - **Play** previews audio; the row shows the track duration after the first hover or play.
 - **Replace** swaps a file in place. You can also drop a single file onto a row.
 - **Add** uploads a new file under its own name; **Delete** removes it from the source and every mirror.

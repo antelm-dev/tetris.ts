@@ -1,5 +1,12 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common'
-import { ApiBearerAuth, ApiConflictResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger'
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse
+} from '@nestjs/swagger'
 import { CurrentUser } from './decorators/current-user.decorator'
 import { Public } from './decorators/public.decorator'
 import { AuthService } from './auth.service'

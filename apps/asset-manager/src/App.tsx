@@ -20,7 +20,15 @@ import { useEffect, useRef, useState } from 'react'
 import type { AssetItem, AssetTypeSummary } from '../server/types'
 import { AssetRow } from './AssetRow'
 import { player } from './audio'
-import { assetUrl, formatBytes, friendlyName, hasAcceptedExtension, typeFilters, visibleItems } from './format'
+import {
+  assetEndpoint,
+  assetUrl,
+  formatBytes,
+  friendlyName,
+  hasAcceptedExtension,
+  typeFilters,
+  visibleItems
+} from './format'
 import { Toaster, notify } from './Toaster'
 import { TypeList } from './TypeList'
 
@@ -28,12 +36,8 @@ function failure(error: unknown, fallback: string): void {
   notify(error instanceof Error ? error.message : fallback, 'error')
 }
 
-function assetEndpoint(type: AssetTypeSummary, name: string): string {
-  return `/api/assets/${encodeURIComponent(type.id)}/${encodeURIComponent(name)}`
-}
-
 async function upload(type: AssetTypeSummary, name: string, file: File, method: 'POST' | 'PUT'): Promise<AssetItem> {
-  const response = await fetch(assetEndpoint(type, name), {
+  const response = await fetch(assetEndpoint(type.id, name), {
     method,
     headers: { 'content-type': file.type || 'application/octet-stream' },
     body: file
@@ -81,7 +85,10 @@ export function App() {
     const stopped = (): void => {
       if (player.paused) setPlaying(undefined)
     }
-    const failed = (): void => setPlaying(undefined)
+    const failed = (): void => {
+      setPlaying(undefined)
+      notify('This asset could not be played.', 'error')
+    }
     document.addEventListener('keydown', focusSearch)
     player.addEventListener('pause', stopped)
     player.addEventListener('ended', stopped)
@@ -97,6 +104,7 @@ export function App() {
   const type = types?.find((entry) => entry.id === activeId)
   const total = types?.reduce((sum, entry) => sum + entry.count, 0)
   const visible = type ? visibleItems(type.items, filter, query) : []
+  const drifted = type?.items.filter((asset) => asset.inSync === false).length ?? 0
 
   const selectType = (id: string): void => {
     setActiveId(id)
@@ -115,8 +123,10 @@ export function App() {
     )
   }
 
-  const setRowBusy = (name: string, value: boolean): void => {
-    setBusy((current) => (value ? [...current, name] : current.filter((entry) => entry !== name)))
+  // Keyed by type and name: the same filename can exist under several types.
+  const setRowBusy = (type: AssetTypeSummary, name: string, value: boolean): void => {
+    const key = `${type.id}/${name}`
+    setBusy((current) => (value ? [...current, key] : current.filter((entry) => entry !== key)))
   }
 
   const accepts = (type: AssetTypeSummary, file: File): boolean => {
@@ -125,7 +135,7 @@ export function App() {
     return false
   }
 
-  const togglePlayback = (type: AssetTypeSummary, url: string): void => {
+  const togglePlayback = (url: string): void => {
     if (playing === url && !player.paused) {
       player.pause()
       return
@@ -136,13 +146,14 @@ export function App() {
       // Stopping or switching tracks before playback starts aborts the pending play().
       if (error instanceof DOMException && error.name === 'AbortError') return
       setPlaying(undefined)
-      notify(`This ${type.singular} could not be played.`, 'error')
+      // A media error has already been reported by the player's `error` listener.
+      if (!player.error) notify('This asset could not be played.', 'error')
     })
   }
 
   const replaceAsset = async (type: AssetTypeSummary, name: string, file: File): Promise<void> => {
     if (!accepts(type, file)) return
-    setRowBusy(name, true)
+    setRowBusy(type, name, true)
     try {
       const asset = await upload(type, name, file, 'PUT')
       updateItems(type.id, (items) => items.map((entry) => (entry.name === name ? asset : entry)))
@@ -150,7 +161,7 @@ export function App() {
     } catch (error) {
       failure(error, 'The replacement failed.')
     } finally {
-      setRowBusy(name, false)
+      setRowBusy(type, name, false)
     }
   }
 
@@ -170,9 +181,9 @@ export function App() {
 
   const deleteAsset = async (type: AssetTypeSummary, name: string): Promise<void> => {
     if (!window.confirm(`Delete ${name} from every configured copy?`)) return
-    setRowBusy(name, true)
+    setRowBusy(type, name, true)
     try {
-      const response = await fetch(assetEndpoint(type, name), { method: 'DELETE' })
+      const response = await fetch(assetEndpoint(type.id, name), { method: 'DELETE' })
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string }
         throw new Error(payload.error ?? 'The deletion failed.')
@@ -182,7 +193,7 @@ export function App() {
     } catch (error) {
       failure(error, 'The deletion failed.')
     } finally {
-      setRowBusy(name, false)
+      setRowBusy(type, name, false)
     }
   }
 
@@ -246,9 +257,9 @@ export function App() {
                   </Text>
                 </Stack>
                 <HStack>
-                  {type.items.some((asset) => asset.inSync === false) && (
+                  {drifted > 0 && (
                     <Badge colorPalette="red" title="Mirrors out of sync">
-                      {type.items.filter((asset) => asset.inSync === false).length} out of sync
+                      {drifted} out of sync
                     </Badge>
                   )}
                   <Badge size="lg">{type.count}</Badge>
@@ -318,6 +329,7 @@ export function App() {
                 <Table.ScrollArea
                   borderWidth="1px"
                   rounded="md"
+                  aria-live="polite"
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => event.preventDefault()}
                 >
@@ -338,8 +350,8 @@ export function App() {
                             type={type}
                             asset={asset}
                             playing={playing === url}
-                            busy={busy.includes(asset.name)}
-                            onPlay={() => togglePlayback(type, url)}
+                            busy={busy.includes(`${type.id}/${asset.name}`)}
+                            onPlay={() => togglePlayback(url)}
                             onReplace={() => pick(asset.name)}
                             onDropFiles={(files) => {
                               if (files.length > 1) notify(`Drop a single ${type.singular} file.`, 'error')

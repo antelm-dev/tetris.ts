@@ -49,7 +49,11 @@ export function visibleItems(items: AssetItem[], filter: string, query: string):
   )
 }
 
+export function assetEndpoint(typeId: string, name: string): string {
+  return `/api/assets/${encodeURIComponent(typeId)}/${encodeURIComponent(name)}`
+}
+
 /** `?v=updatedAt` busts the browser cache after a replacement. */
 export function assetUrl(typeId: string, asset: AssetItem): string {
-  return `/api/assets/${encodeURIComponent(typeId)}/${encodeURIComponent(asset.name)}?v=${encodeURIComponent(asset.updatedAt)}`
+  return `${assetEndpoint(typeId, asset.name)}?v=${encodeURIComponent(asset.updatedAt)}`
 }

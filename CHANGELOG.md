@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0](https://github.com/antelm-dev/tetris.ts/compare/tetris.ts-v1.3.0...tetris.ts-v1.4.0) (2026-10-08)
+
+
+### Features
+
+* **asset-manager:** mount React and Chakra UI v3 shell ([e8f8680](https://github.com/antelm-dev/tetris.ts/commit/e8f8680992bc424b2287814f0f0e773a742fdd40))
+* **asset-manager:** port add, replace, drop, delete, toasts and audio preview ([e976a75](https://github.com/antelm-dev/tetris.ts/commit/e976a754e4275bf7089d57ff5f41c727033fdc1b))
+* **asset-manager:** render catalogue, type list and asset table with Chakra ([da9720e](https://github.com/antelm-dev/tetris.ts/commit/da9720e4642a21ed4781adc4eac39c8a566f231d))
+* **asset-manager:** rewrite the UI with React and Chakra UI v3 ([a80f0ec](https://github.com/antelm-dev/tetris.ts/commit/a80f0ec85eda2a910dc50d2397f83a3da5c3dbda))
+* **asset-manager:** typescript server, add/delete, music and image types, badges ([0b72651](https://github.com/antelm-dev/tetris.ts/commit/0b72651a2e84d6c2d223930b0d71e4d51bf69372))
+* **tetris:** use the three-square brand mark as app icon and favicon ([2e4f3e8](https://github.com/antelm-dev/tetris.ts/commit/2e4f3e8b2ec4464ea3c4210ac21a012bae44952a))
+
+
+### Bug Fixes
+
+* **asset-manager:** address review notes on the Chakra UI port ([9e78a0e](https://github.com/antelm-dev/tetris.ts/commit/9e78a0e92edc228abc5dda1862da8be503c003a8))
+
 ## [1.3.0](https://github.com/antelm-dev/tetris.ts/compare/tetris.ts-v1.2.1...tetris.ts-v1.3.0) (2026-08-02)
 
 
